@@ -34,10 +34,13 @@ class AutoLogin {
   private silentMode: boolean = false;
 
   constructor() {
-    this.WIFI_SSID = "COORDINAT";
+    this.WIFI_SSID = process.env.WIFI_SSID || "COORDINAT";
     this.WIFI_PASSWORD = process.env.WIFI_PASSWORD || "";
-    this.AUTH_URL = "http://192.168.1.44:5000/Hotspot/Authentication";
-    this.LOGIN_INTERVAL_MS = 5_000; // 5 seconds
+    this.AUTH_URL =
+      process.env.AUTH_URL || "http://192.168.1.44:5000/Hotspot/Authentication";
+    this.LOGIN_INTERVAL_MS = process.env.LOGIN_INTERVAL_MS
+      ? parseInt(process.env.LOGIN_INTERVAL_MS)
+      : 5_000; // 5 seconds
     this.LOG_FILE = path.join(__dirname, "connection.log");
     this.FORM_DATA = {
       TC_NU: process.env.TC_NO || "12345678901", // National ID Number
