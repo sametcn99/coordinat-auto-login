@@ -272,14 +272,11 @@ class AutoLogin {
         break;
       default:
         console.log(logMessage);
-    }
-
-    // Append to log file
-    // fs.appendFile(this.LOG_FILE, logMessage + '\n', (err) => {
-    //   if (err) {
-    //     console.error(`[${new Date().toISOString()}][ERROR] Failed to write to log file: ${err.message}`);
-    //   }
-    // });
+    }    // Append to log file
+    fs.appendFile(this.LOG_FILE, logMessage + '\n')
+      .catch((err) => {
+        console.error(`[${new Date().toISOString()}][ERROR] Failed to write to log file: ${err.message}`);
+      });
   }
 
   // Get device MAC address
