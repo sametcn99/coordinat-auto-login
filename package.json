@@ -6,16 +6,11 @@
   "scripts": {
     "start": "bun run index.ts",
     "build": "bun build ./index.ts --compile --outfile coordinat-auto-login.exe",
-    "format": "prettier --write .",
-    "lint": "eslint . --ext .ts",
-    "lint:fix": "eslint . --ext .ts --fix"
+    "format": "prettier --write ."
   },
   "devDependencies": {
     "@types/bun": "^1.2.10",
     "@types/node-wifi": "^2.0.2",
-    "@typescript-eslint/eslint-plugin": "^8.30.1",
-    "@typescript-eslint/parser": "^8.30.1",
-    "eslint": "^9.25.0",
     "prettier": "3.5.3"
   },
   "peerDependencies": {
