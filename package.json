@@ -1,0 +1,26 @@
+{
+  "name": "coordinat-auto-login",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run index.ts",
+    "build": "bun build ./index.ts --compile --outfile coordinat-auto-login",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.10",
+    "@types/node-wifi": "^2.0.2",
+    "prettier": "3.5.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@types/inquirer": "^9.0.7",
+    "axios": "^1.8.4",
+    "inquirer": "^12.5.2",
+    "node-wifi": "^2.0.16",
+    "puppeteer": "^24.6.1"
+  }
+}
