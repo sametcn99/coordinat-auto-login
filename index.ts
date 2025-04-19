@@ -1,15 +1,22 @@
+/**
+ * @fileoverview Main script for the Coordinat Auto Login application.
+ * Handles Wi-Fi connection, captive portal detection, and automatic login.
+ */
 import axios from "axios";
 import * as path from "path";
 import * as os from "os"; // Ensure os is imported at the top
 import wifi from "node-wifi"; // Import node-wifi
-import puppeteer, { Browser } from "puppeteer"; // Add Puppeteer for browser-based authentication
+import puppeteer, { Browser, Page } from "puppeteer"; // Add Puppeteer for browser-based authentication
 import * as fs from "fs/promises"; // Use fs/promises for async file operations
 import inquirer from "inquirer"; // Import inquirer
 // import { exec } from 'child_process'; // Keep commented if not used
 // import { promisify } from 'util'; // Keep commented if not used
 // const execAsync = promisify(exec);
 
-// Log levels for more granular logging
+/**
+ * Enum representing the different log levels.
+ * @enum {string}
+ */
 enum LogLevel {
   DEBUG = "DEBUG",
   INFO = "INFO",
@@ -17,46 +24,83 @@ enum LogLevel {
   ERROR = "ERROR",
 }
 
-// Add a new enum for connectivity status
+/**
+ * Enum representing the network connectivity status.
+ * @enum {string}
+ */
 enum ConnectivityStatus {
   ONLINE = "ONLINE",
   OFFLINE = "OFFLINE",
   CAPTIVE_PORTAL = "CAPTIVE_PORTAL",
 }
 
-// Define an interface for the configuration structure
+/**
+ * Interface defining the structure for the application configuration.
+ * @interface AppConfig
+ */
 interface AppConfig {
+  /** The SSID (name) of the target Wi-Fi network. */
   WIFI_SSID: string;
-  WIFI_PASSWORD?: string; // Optional password
+  /** The password for the target Wi-Fi network (optional). */
+  WIFI_PASSWORD?: string;
+  /** The URL used for captive portal authentication POST requests or initial navigation. */
   AUTH_URL: string;
+  /** The interval in milliseconds between connectivity checks. */
   LOGIN_INTERVAL_MS: number;
+  /** The user's Turkish ID number (TC Kimlik No). */
   TC_NU: string;
+  /** The user's first name. */
   NAME: string;
+  /** The user's last name. */
   SURNAME: string;
+  /** The user's birth year (YYYY format). */
   BIRTH_YEAR: string;
 }
 
+/**
+ * @class AutoLogin
+ * Manages the process of automatically connecting to a specified Wi-Fi network
+ * and handling captive portal authentication.
+ */
 class AutoLogin {
-  private WIFI_SSID: string; // Wi-Fi network name
-  private WIFI_PASSWORD: string; // Wi-Fi password (if needed)
-  private AUTH_URL: string; // Captive portal POST URL
-  private LOGIN_INTERVAL_MS: number; // Check every N seconds
+  /** @private The SSID of the Wi-Fi network to connect to. */
+  private WIFI_SSID: string;
+  /** @private The password for the Wi-Fi network (if required). */
+  private WIFI_PASSWORD: string;
+  /** @private The URL used for captive portal authentication or detection. */
+  private AUTH_URL: string;
+  /** @private The interval in milliseconds for checking connectivity status. */
+  private LOGIN_INTERVAL_MS: number;
+  /** @private The path to the log file. */
   private LOG_FILE: string;
+  /** @private The user data required for the captive portal login form. */
   private FORM_DATA: {
     idnumber: string; // Changed from TC_NU to match Hotspot.html
     name: string; // Changed from NAME
     surname: string; // Changed from SURNAME
     birthyear: string; // Changed from BIRTH_YEAR
   };
+  /** @private Counter for connection attempts since the last success. */
   private connectionAttempts: number = 0;
+  /** @private Counter for total successful connections. */
   private successfulConnections: number = 0;
+  /** @private Timestamp of the last successful connection. */
   private lastSuccessTime: number = Date.now();
+  /** @private Counter for consecutive successful connectivity checks. */
   private consecutiveActiveConnections: number = 0;
+  /** @private Flag indicating if the script is in silent mode (reduced logging). */
   private silentMode: boolean = false;
+  /** @private Holds the Puppeteer browser instance if currently active. */
   private browserInstance: Browser | null = null; // Track browser instance for cleanup
+  /** @private Holds the loaded application configuration. */
   private config!: AppConfig; // Add a property to hold the loaded config
+  /** @private The absolute path to the configuration file. */
   private configPath: string; // Path to the config file
 
+  /**
+   * Creates an instance of AutoLogin.
+   * Initializes properties with default values and defines the config path.
+   */
   constructor() {
     // Initialize properties with placeholder or default values
     // These will be overwritten by the config loaded in init()
@@ -74,7 +118,15 @@ class AutoLogin {
     this.configPath = path.join(__dirname, "auto-login.config.json"); // Define config file path
   }
 
-  // Async initialization method to load/prompt for config
+  /**
+   * Initializes the AutoLogin instance.
+   * Loads configuration from a file or prompts the user if the file doesn't exist.
+   * Sets up class properties based on the configuration.
+   * Initializes the `node-wifi` library.
+   * @public
+   * @async
+   * @returns {Promise<void>} A promise that resolves when initialization is complete.
+   */
   public async init(): Promise<void> {
     this.log("🔧 Initializing configuration...", undefined, LogLevel.DEBUG);
     this.config = await this.loadOrPromptConfig();
@@ -100,7 +152,16 @@ class AutoLogin {
     this.log("📶 node-wifi initialized.", undefined, LogLevel.DEBUG);
   }
 
-  // Function to load config from file or prompt user
+  /**
+   * Loads configuration from the `auto-login.config.json` file.
+   * If the file doesn't exist, it prompts the user for configuration details
+   * using `inquirer` and saves the answers to the file.
+   * @private
+   * @async
+   * @returns {Promise<AppConfig>} A promise that resolves with the loaded or newly created configuration.
+   * @throws {Error} If the configuration file exists but is invalid or missing required fields.
+   * @throws {Error} If there's an error reading or writing the configuration file (other than ENOENT).
+   */
   private async loadOrPromptConfig(): Promise<AppConfig> {
     try {
       this.log(
@@ -221,7 +282,16 @@ class AutoLogin {
     }
   }
 
-  // Function to log messages both to console and file with enhanced details
+  /**
+   * Logs a message to both the console and the log file.
+   * Includes timestamp, log level, and memory usage.
+   * Handles optional error details.
+   * Manages silent mode (suppresses INFO logs when stable, exits silent mode on error).
+   * @private
+   * @param {string} message - The main message to log.
+   * @param {Error | string | unknown} [error] - Optional error object or details.
+   * @param {LogLevel} [level=LogLevel.INFO] - The severity level of the log message.
+   */
   private log(
     message: string,
     error?: Error | string | unknown,
@@ -280,7 +350,11 @@ class AutoLogin {
     });
   }
 
-  // Get device MAC address
+  /**
+   * Retrieves the MAC address of the first active non-internal IPv4 network interface.
+   * @private
+   * @returns {string | null} The MAC address string, or null if none is found.
+   */
   private getMacAddress(): string | null {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -298,9 +372,14 @@ class AutoLogin {
     return null;
   }
 
-  // Scan for WiFi networks and get the target network's MAC address
-  // Note: This functionality is highly OS-dependent and might require external libraries or commands.
-  // This is a placeholder and likely won't work out-of-the-box on all systems.
+  /**
+   * Placeholder function to get the MAC address of the target Wi-Fi network's access point.
+   * Note: This is highly OS-dependent and likely requires platform-specific implementations
+   * or external libraries/commands. Currently returns null.
+   * @private
+   * @async
+   * @returns {Promise<string | null>} A promise that resolves with the AP's MAC address or null.
+   */
   private async getWifiMacAddress(): Promise<string | null> {
     this.log(
       "🔍 Scanning for WiFi networks (placeholder)...",
@@ -324,7 +403,14 @@ class AutoLogin {
     }
   }
 
-  // UPDATED Connection check (detects captive portal and extracts params)
+  /**
+   * Checks the current internet connectivity status.
+   * It attempts to reach standard connectivity check URLs (Google, Microsoft).
+   * Determines if the status is ONLINE, OFFLINE, or behind a CAPTIVE_PORTAL.
+   * @private
+   * @async
+   * @returns {Promise<ConnectivityStatus>} A promise resolving to the determined connectivity status.
+   */
   private async checkConnectivityStatus(): Promise<ConnectivityStatus> {
     // Alternative connectivity check URLs
     const checkUrl = "http://connectivitycheck.gstatic.com/generate_204";
@@ -451,7 +537,12 @@ class AutoLogin {
     }
   }
 
-  // Connect to Wi-Fi using node-wifi
+  /**
+   * Attempts to connect to the configured Wi-Fi network using `node-wifi`.
+   * @private
+   * @async
+   * @returns {Promise<void>} A promise that resolves when the connect command is initiated.
+   */
   private async connectToWifi() {
     this.log(
       `📶 Attempting to connect to WiFi: ${this.WIFI_SSID} using node-wifi...`,
@@ -477,7 +568,12 @@ class AutoLogin {
     }
   }
 
-  // Disconnect from current WiFi using node-wifi
+  /**
+   * Attempts to disconnect from the current Wi-Fi network using `node-wifi`.
+   * @private
+   * @async
+   * @returns {Promise<void>} A promise that resolves when the disconnect command is executed.
+   */
   private async disconnectFromWifi() {
     this.log(
       "🔌 Attempting to disconnect from WiFi using node-wifi...",
@@ -500,8 +596,16 @@ class AutoLogin {
     }
   }
 
-  // UPDATED Captive portal login to accept and use redirect parameters
-  // REWRITTEN Captive portal login using Puppeteer
+  /**
+   * Handles captive portal authentication using Puppeteer.
+   * Launches a browser, navigates to a test URL to trigger the portal redirect,
+   * attempts to identify the portal page, and then calls `fillCaptivePortalForm`
+   * to interact with the login form.
+   * Ensures the browser instance is properly closed afterwards.
+   * @private
+   * @async
+   * @returns {Promise<void>} A promise that resolves when the authentication attempt is complete.
+   */
   private async authenticateToPortal() {
     // Check if a browser is already running (e.g., from a previous failed attempt)
     if (this.browserInstance) {
@@ -732,8 +836,16 @@ class AutoLogin {
     }
   }
 
-  // Helper method to find and fill the captive portal form
-  private async fillCaptivePortalForm(page: any): Promise<boolean> {
+  /**
+   * Attempts to find and fill the login form fields on the captive portal page
+   * and click the submit button using Puppeteer.
+   * Tries multiple common selectors for each field and the submit button.
+   * @private
+   * @async
+   * @param {Page} page - The Puppeteer Page object representing the captive portal page.
+   * @returns {Promise<boolean>} A promise resolving to true if the submit button was successfully clicked, false otherwise.
+   */
+  private async fillCaptivePortalForm(page: Page): Promise<boolean> {
     try {
       // Check for common form fields in captive portals
       const formFieldsFound = {
@@ -777,11 +889,16 @@ class AutoLogin {
         birthyear: this.FORM_DATA.birthyear,
       };
 
-      // Function to try multiple selectors for a field
+      /**
+       * Helper function to try multiple selectors to find and fill a form field.
+       * @param {keyof typeof formFieldsFound} fieldName - The logical name of the field.
+       * @param {string} value - The value to type into the field.
+       * @returns {Promise<boolean>} True if the field was successfully filled, false otherwise.
+       */
       const fillField = async (
         fieldName: keyof typeof formFieldsFound,
         value: string,
-      ) => {
+      ): Promise<boolean> => {
         for (const selector of fieldSelectors[fieldName]) {
           try {
             // Wait for selector with a shorter timeout
@@ -827,10 +944,10 @@ class AutoLogin {
         'button[id*="submit"]',
         'button[id*="connect"]',
         'button[id*="login"]',
-        'button:contains("Bağlan")', // Text-based selectors (less reliable)
-        'button:contains("Connect")',
-        'button:contains("Login")',
-        'button:contains("Submit")',
+        // 'button:contains("Bağlan")', // Text-based selectors (less reliable, might need configuration)
+        // 'button:contains("Connect")',
+        // 'button:contains("Login")',
+        // 'button:contains("Submit")',
         ".connect-btn", // Original selector
       ];
 
@@ -958,7 +1075,17 @@ class AutoLogin {
     }
   }
 
-  // Updated main loop for puppeteer-based authentication
+  /**
+   * The main monitoring loop.
+   * Periodically checks connectivity status and takes appropriate action:
+   * - OFFLINE: Attempts to connect to Wi-Fi.
+   * - CAPTIVE_PORTAL: Attempts to authenticate using Puppeteer.
+   * - ONLINE: Logs status (enters silent mode after several consecutive checks).
+   * Handles graceful shutdown on SIGINT/SIGTERM.
+   * @public
+   * @async
+   * @returns {Promise<void>} A promise that never resolves, as the loop runs indefinitely.
+   */
   public async monitor() {
     // Ensure config is loaded before starting monitor
     if (!this.config) {
@@ -982,7 +1109,11 @@ class AutoLogin {
       LogLevel.DEBUG,
     );
 
-    // Graceful shutdown handling
+    /**
+     * Handles graceful shutdown signals (SIGINT, SIGTERM).
+     * Closes the Puppeteer browser instance if it's open.
+     * @param {string} signal - The signal received (e.g., 'SIGINT').
+     */
     const shutdown = async (signal: string) => {
       this.log(
         `${signal} received. Shutting down browser if open...`,
@@ -1148,7 +1279,12 @@ class AutoLogin {
   }
 }
 
-// Start the application
+/**
+ * Initializes and starts the AutoLogin application.
+ * Creates an instance of AutoLogin, calls its init() method,
+ * and then starts the monitoring loop. Handles fatal startup errors.
+ * @async
+ */
 async function startApp() {
   const autoLogin = new AutoLogin();
   try {
