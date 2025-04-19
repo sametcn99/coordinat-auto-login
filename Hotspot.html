@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+    <title>Hotspot</title>
+    <!--  style files begin -->
+    <link
+      href="./Hotspot_files/bundle.min.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <link
+      href="./Hotspot_files/authentication.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+
+    <!--  style files end -->
+    <!--  script files begin -->
+    <script
+      src="./Hotspot_files/popper.js.download"
+      type="text/javascript"
+    ></script>
+
+    <script
+      src="./Hotspot_files/bundle.min.js.download"
+      type="text/javascript"
+    ></script>
+    <style type="text/css"></style>
+
+    <!--  script files end -->
+  </head>
+  <body
+    class="animated fadeIn faster opensans fontcolor radius btncolor default backgroundcolor kare"
+  >
+    <div class="form-body">
+      <input hidden="hidden" id="redirectUrl" value="www.coordinatsuits.com" />
+      <input hidden="hidden" id="errorPage" />
+
+      <div class="lang-selector">
+        <div class="btn-group" style="z-index: 1">
+          <button
+            type="button"
+            class="btn btn-secondary dropdown-toggle"
+            data-toggle="dropdown"
+            aria-haspopup="true"
+            aria-expanded="false"
+          >
+            <img
+              class="flag-icon-base64"
+              src="data:image/svg+xml;base64, PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAwIDgwMCI+CjxyZWN0IHdpZHRoPSIxMjAwIiBoZWlnaHQ9IjgwMCIgZmlsbD0iI0UzMEExNyIvPgo8Y2lyY2xlIGN4PSI0MjUiIGN5PSI0MDAiIHI9IjIwMCIgc3R5bGU9ImZpbGw6I2ZmZmZmZiIvPgo8Y2lyY2xlIGN4PSI0NzUiIGN5PSI0MDAiIHI9IjE2MCIgc3R5bGU9ImZpbGw6I0UzMEExNyIvPgo8cG9seWdvbiBzdHlsZT0iZmlsbDojZmZmZmZmIiBwb2ludHM9IjU4My4zMzQsNDAwIDc2NC4yMzUsNDU4Ljc3OSA2NTIuNDMxLDMwNC44OTQgNjUyLjQzMSw0OTUuMTA2IDc2NC4yMzUsMzQxLjIyMSIvPgo8L3N2Zz4K"
+            />
+            <span class="langspan" data-val="tr">TR</span>
+          </button>
+          <div class="dropdown-menu dropdown-menu-right">
+            <button class="dropdown-item" type="button" value="tr">
+              <img
+                class="flag-icon-base64"
+                src="data:image/svg+xml;base64, PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAwIDgwMCI+CjxyZWN0IHdpZHRoPSIxMjAwIiBoZWlnaHQ9IjgwMCIgZmlsbD0iI0UzMEExNyIvPgo8Y2lyY2xlIGN4PSI0MjUiIGN5PSI0MDAiIHI9IjIwMCIgc3R5bGU9ImZpbGw6I2ZmZmZmZiIvPgo8Y2lyY2xlIGN4PSI0NzUiIGN5PSI0MDAiIHI9IjE2MCIgc3R5bGU9ImZpbGw6I0UzMEExNyIvPgo8cG9seWdvbiBzdHlsZT0iZmlsbDojZmZmZmZmIiBwb2ludHM9IjU4My4zMzQsNDAwIDc2NC4yMzUsNDU4Ljc3OSA2NTIuNDMxLDMwNC44OTQgNjUyLjQzMSw0OTUuMTA2IDc2NC4yMzUsMzQxLjIyMSIvPgo8L3N2Zz4K"
+              />
+              TR
+            </button>
+            <button class="dropdown-item" type="button" value="en">
+              <img
+                class="flag-icon-base64"
+                src="data:image/svg+xml;base64, PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2aWV3Qm94PSIwIDAgNzQxMCAzOTAwIj4KPHJlY3Qgd2lkdGg9Ijc0MTAiIGhlaWdodD0iMzkwMCIgZmlsbD0iI2IyMjIzNCIvPgo8cGF0aCBkPSJNMCw0NTBINzQxMG0wLDYwMEgwbTAsNjAwSDc0MTBtMCw2MDBIMG0wLDYwMEg3NDEwbTAsNjAwSDAiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIzMDAiLz4KPHJlY3Qgd2lkdGg9IjI5NjQiIGhlaWdodD0iMjEwMCIgZmlsbD0iIzNjM2I2ZSIvPgo8ZyBmaWxsPSIjZmZmIj4KPGcgaWQ9InMxOCI+CjxnIGlkPSJzOSI+CjxnIGlkPSJzNSI+CjxnIGlkPSJzNCI+CjxwYXRoIGlkPSJzIiBkPSJNMjQ3LDkwIDMxNy41MzQyMzAsMzA3LjA4MjAzOSAxMzIuODczMjE4LDE3Mi45MTc5NjFIMzYxLjEyNjc4MkwxNzYuNDY1NzcwLDMwNy4wODIwMzl6Ii8+Cjx1c2UgeGxpbms6aHJlZj0iI3MiIHk9IjQyMCIvPgo8dXNlIHhsaW5rOmhyZWY9IiNzIiB5PSI4NDAiLz4KPHVzZSB4bGluazpocmVmPSIjcyIgeT0iMTI2MCIvPgo8L2c+Cjx1c2UgeGxpbms6aHJlZj0iI3MiIHk9IjE2ODAiLz4KPC9nPgo8dXNlIHhsaW5rOmhyZWY9IiNzNCIgeD0iMjQ3IiB5PSIyMTAiLz4KPC9nPgo8dXNlIHhsaW5rOmhyZWY9IiNzOSIgeD0iNDk0Ii8+CjwvZz4KPHVzZSB4bGluazpocmVmPSIjczE4IiB4PSI5ODgiLz4KPHVzZSB4bGluazpocmVmPSIjczkiIHg9IjE5NzYiLz4KPHVzZSB4bGluazpocmVmPSIjczUiIHg9IjI0NzAiLz4KPC9nPgo8L3N2Zz4K"
+              />
+              EN
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="website-logo">
+        <a href="javascript:;">
+          <div class="logo">
+            <img
+              class="logo-size"
+              style="opacity: unset !important"
+              src="./Hotspot_files/Misafir-logohotspot.png"
+              alt=""
+            />
+          </div>
+        </a>
+      </div>
+      <div class="row" style="height: 80%">
+        <div class="form-holder">
+          <div class="form-content">
+            <div class="form-items">
+              <h3 class="text-center">Hoşgeldiniz</h3>
+              <p class="text-center"></p>
+              <div class="auth-container">
+                <style>
+                  .fas.fa-sign-in-alt {
+                    color: #0b7285;
+                  }
+
+                  .auth-type-header {
+                    margin-bottom: 20px;
+                  }
+                </style>
+                <div class="page-links text-center">
+                  <a
+                    href="javascript:;"
+                    class="auth-type-header active"
+                    data-header="Id"
+                  >
+                    TC Kimlik <i class="fas fa-sign-in-alt"></i
+                  ></a>
+                  <a
+                    href="javascript:;"
+                    class="auth-type-header"
+                    data-header="Captive"
+                  >
+                    Captive Portal <i class="fas fa-sign-in-alt"></i
+                  ></a>
+                </div>
+
+                <script>
+                  // Class definition
+                  var AuthType = (function () {
+                    var handleCore = function () {
+                      $(".auth-type-header").click(function () {
+                        var the = $(this).data("header");
+                        $.cookie("selectedauthheader", the);
+                        Auth.blockUI();
+                        location.reload();
+                      });
+                    };
+
+                    return {
+                      // Init demos
+                      init: function () {
+                        handleCore();
+                      },
+                    };
+                  })();
+                  // Class initialization on page load
+                  jQuery(document).ready(function () {
+                    AuthType.init();
+                  });
+                </script>
+
+                <form novalidate="novalidate">
+                  <input
+                    hidden="hidden"
+                    id="deviceId"
+                    name="deviceId"
+                    value="FG100E4Q17013467"
+                  />
+                  <input
+                    hidden="hidden"
+                    id="post"
+                    name="post"
+                    value="http://10.10.10.254:1000/fgtauth"
+                  />
+                  <input
+                    hidden="hidden"
+                    id="magic"
+                    name="magic"
+                    value="07073ae1cc51eb7a"
+                  />
+                  <input
+                    hidden="hidden"
+                    id="usermac"
+                    name="usermac"
+                    value="64:6e:e0:c0:84:b0"
+                  />
+                  <input
+                    hidden="hidden"
+                    id="apmac"
+                    name="apmac"
+                    value="70:4c:a5:43:9a:3b"
+                  />
+                  <input
+                    hidden="hidden"
+                    id="apip"
+                    name="apip"
+                    value="10.10.10.254"
+                  />
+                  <input
+                    hidden="hidden"
+                    id="userip"
+                    name="userip"
+                    value="10.10.10.47"
+                  />
+                  <input hidden="hidden" id="ssid" name="ssid" value="KAT 1" />
+                  <input
+                    hidden="hidden"
+                    id="apname"
+                    name="apname"
+                    value="FG100E4Q17013467"
+                  />
+                  <input
+                    hidden="hidden"
+                    id="bssid"
+                    name="bssid"
+                    value="00:00:00:00:00:00"
+                  />
+                  <input
+                    hidden="hidden"
+                    id="vendor"
+                    name="vendor"
+                    value="FortiGate"
+                  />
+
+                  <input
+                    type="number"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    required="required"
+                    class="form-control"
+                    id="idnumber"
+                    name="idnumber"
+                    placeholder="TC Kimlik Numarası"
+                  />
+                  <input
+                    type="text"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    required="required"
+                    class="form-control"
+                    id="name"
+                    name="name"
+                    placeholder="Ad"
+                  />
+                  <input
+                    type="text"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    required="required"
+                    class="form-control"
+                    id="surname"
+                    name="surname"
+                    placeholder="Soyad"
+                  />
+                  <input
+                    type="number"
+                    max="31"
+                    min="1"
+                    required="required"
+                    class="form-control"
+                    id="birthday"
+                    name="birthday"
+                    placeholder="Doğum Gün"
+                    style="display: none"
+                  />
+                  <input
+                    type="number"
+                    max="12"
+                    min="1"
+                    required="required"
+                    class="form-control"
+                    id="birthyear"
+                    name="birthmonth"
+                    placeholder="Doğum Ay"
+                    style="display: none"
+                  />
+                  <input
+                    type="number"
+                    required="required"
+                    class="form-control"
+                    id="birthyear"
+                    name="birthyear"
+                    placeholder="Doğum Yılı"
+                  />
+
+                  <input
+                    hidden="hidden"
+                    id="isactiveadminapprove"
+                    name="isactiveadminapprove"
+                    value="false"
+                  />
+
+                  <div class="form-button text-center">
+                    <button
+                      class="ibtn ladda-button connect-btn"
+                      data-style="expand-right"
+                    >
+                      Bağlan
+                    </button>
+                  </div>
+                  <script>
+                    "use strict";
+                    // Class definition
+                    var Connect = (function () {
+                      var handleCore = function () {
+                        $(".agree-box").click(function () {
+                          $(".connect-btn").removeAttr("disabled");
+                        });
+                      };
+                      return {
+                        // Init demos
+                        init: function () {
+                          handleCore();
+                        },
+                      };
+                    })();
+                    // Class initialization on page load
+                    jQuery(document).ready(function () {
+                      Connect.init();
+                    });
+                  </script>
+                </form>
+                <script>
+                  // Class definition
+                  var TcknAuth = (function () {
+                    //Detecting iOS
+                    function iOS() {
+                      return (
+                        [
+                          "iPad Simulator",
+                          "iPhone Simulator",
+                          "iPod Simulator",
+                          "iPad",
+                          "iPhone",
+                          "iPod",
+                        ].includes(navigator.platform) ||
+                        // iPad on iOS 13 detection
+                        (navigator.userAgent.includes("Mac") &&
+                          "ontouchend" in document)
+                      );
+                    }
+
+                    //uniq browser id
+                    function getguid() {
+                      var nav = window.navigator;
+                      var screen = window.screen;
+                      var guid = nav.mimeTypes.length;
+                      guid += nav.userAgent.replace(/\D+/g, "");
+                      guid += nav.plugins.length;
+                      guid += screen.height || "";
+                      guid += screen.width || "";
+                      guid += screen.pixelDepth || "";
+
+                      //$(".iosguidform").append("<p>GETGUID" + guid + "</p>");
+
+                      return guid;
+                    }
+
+                    var isactiveadminapprove =
+                      $("#isactiveadminapprove").val() == "true" ? true : false;
+
+                    function fortipost(data) {
+                      var post = $("#post").val();
+                      var magic = $("#magic").val();
+
+                      var username = data.rString;
+                      var password = data.rString1;
+
+                      //console.log(username + "--" + password);
+
+                      var form = document.createElement("form");
+                      form.id = "fortipostform";
+                      form.action = post;
+                      form.method = "post";
+                      form.target = "fortiiframe";
+
+                      inputApost = document.createElement("input");
+                      inputApost.type = "hidden";
+                      inputApost.name = "apost";
+                      inputApost.value = post;
+                      form.appendChild(inputApost);
+
+                      inputMagic = document.createElement("input");
+                      inputMagic.type = "hidden";
+                      inputMagic.name = "magic";
+                      inputMagic.value = magic;
+                      form.appendChild(inputMagic);
+
+                      inputUsername = document.createElement("input");
+                      inputUsername.type = "hidden";
+                      inputUsername.name = "username";
+                      inputUsername.value = username;
+                      form.appendChild(inputUsername);
+
+                      inputPassword = document.createElement("input");
+                      inputPassword.type = "hidden";
+                      inputPassword.name = "password";
+                      inputPassword.value = password;
+                      form.appendChild(inputPassword);
+
+                      button = document.createElement("button");
+                      button.type = "submit";
+                      button.name = "fortiformbtn";
+                      button.id = "fortiformbtn";
+                      button.className = "hidden";
+                      form.appendChild(button);
+
+                      document.body.appendChild(form);
+
+                      $("body").append(
+                        '<iframe style="display:none; width:100%;" src="about:blank" name="fortiiframe" id="fortiiframe"></iframe>',
+                      );
+
+                      setTimeout(function () {
+                        document.getElementById("fortiformbtn").click();
+
+                        setTimeout(function () {
+                          try {
+                            var xhttp = new XMLHttpRequest();
+                            xhttp.onreadystatechange = function () {
+                              if (this.readyState == 4 && this.status == 200) {
+                                //console.log(this.responseText);
+                              }
+                            };
+                            xhttp.open("POST", post, true);
+                            xhttp.setRequestHeader(
+                              "Content-type",
+                              "application/x-www-form-urlencoded",
+                            );
+                            xhttp.send(
+                              encodeURI(
+                                "apost=" +
+                                  post +
+                                  "&magic=" +
+                                  magic +
+                                  "&username=" +
+                                  username +
+                                  "&password=" +
+                                  password +
+                                  "",
+                              ),
+                            );
+                          } catch (e) {
+                            Auth.alertErrorMessage({
+                              Type: "Id Auth",
+                              Description: e.Message,
+                            });
+                          }
+                          //şimdi yönlendir.
+                          var viewName = "SuccessPartial.cshtml";
+                          Auth.getPartialView(viewName, function (data) {
+                            $("body").children().hide();
+                            $("body").append(data);
+                          });
+                        }, 100);
+                      }, 10);
+                    }
+
+                    var loginTimeoutMs = 1000;
+
+                    var handleCore = function () {
+                      function sendRequest() {
+                        $(".agree-box").click(function () {
+                          $(".connect-btn").removeAttr("disabled");
+                        });
+                        $(".connect-btn").ladda("start");
+                        $("form *").prop("readonly", true);
+                        $.ajax({
+                          url: "/Hotspot/IdAuth",
+                          type: "POST",
+                          data: $("form").serialize(),
+                          success: function (data) {
+                            setTimeout(function () {
+                              if (data.IsSuccessful) {
+                                var vendor = $("#vendor").val();
+                                //console.log(vendor);
+                                //onay beklet
+                                if (isactiveadminapprove) {
+                                  $(".waitingconfirmcontainer").show();
+                                  //$('form *').hide();
+                                  //$.cookie("smscoderequestcompleted", "False");
+                                  $.cookie("iswaittcadminapprove", "false");
+
+                                  if (iOS()) {
+                                    SetIOSSession(data.rString, data);
+                                  }
+
+                                  handleApprove(data.rString, data);
+                                } else {
+                                  //console.log(data);
+                                  fortipost(data);
+                                }
+                              } else {
+                                $(".connect-btn").ladda("stop");
+                                $("form *").prop("readonly", false);
+                                Auth.alertErrorMessage({
+                                  Type: "TCKN Auth",
+                                  Description: data.Description,
+                                });
+                              }
+                            }, loginTimeoutMs);
+                          },
+                          error: function (xhr, status, error) {
+                            //console.log(data);
+                            $(".connect-btn").ladda("stop");
+                            $("form *").prop("readonly", false);
+                            var errorMessage =
+                              xhr.status + ": " + xhr.statusText;
+                            Auth.alertErrorMessage({
+                              Type: "TCKN Auth",
+                              Description: errorMessage,
+                            });
+                          },
+                        });
+                      }
+
+                      var whitelistcheckpending = false;
+                      $("body").on("focus keyup", "#idnumber", function () {
+                        var thevalue = $("input[name=idnumber]").val();
+                        if (thevalue.length == 11) {
+                          if (!whitelistcheckpending) {
+                            $.ajax({
+                              url: "/Hotspot/CheckIdWhiteBlackList",
+                              type: "POST",
+                              data: { id: thevalue },
+                              success: function (data) {
+                                if (data.IsSuccessful) {
+                                  if (data.Description == "black") {
+                                    whitelistcheckpending = false;
+                                    Auth.alertErrorMessage({
+                                      Type: "TCKN Auth",
+                                      Description:
+                                        "Oturum açılamadı. Kullanıcı kara listede! Lütfen sistem yöneticiniz ile iletişime geçiniz.",
+                                    });
+                                    $("input[name=idnumber]").val("");
+                                  }
+                                  if (data.Description == "white") {
+                                    Auth.alertSuccessMessage({
+                                      Type: "TCKN Auth",
+                                      Description:
+                                        "Kullanıcı beyaz listede. Oturum açılıyor, lütfen bekleyiniz.",
+                                    });
+                                    isactiveadminapprove = false;
+
+                                    sendRequest();
+                                  }
+                                  whitelistcheckpending = false;
+                                } else {
+                                  whitelistcheckpending = false;
+                                }
+                              },
+                              error: function (xhr, status, error) {
+                                whitelistcheckpending = false;
+                              },
+                            });
+                          }
+                          whitelistcheckpending = true;
+                        }
+                      });
+                      $("body").on("focus keyup", "input", function () {
+                        var thevalue = $("input[name=idnumber]").val();
+                        if (thevalue.length > 0) {
+                          if (
+                            parseInt(thevalue.substring(0, 2)) >= 99 &&
+                            parseInt(thevalue.substring(thevalue.length - 2)) <=
+                              99
+                          ) {
+                            $("input[name=birthday]").show();
+                            $("input[name=birthmonth]").show();
+                          } else {
+                            $("input[name=birthday]").hide();
+                            $("input[name=birthmonth]").hide();
+                          }
+                        } else {
+                          $("input[name=birthday]").hide();
+                          $("input[name=birthmonth]").hide();
+                        }
+                      });
+
+                      jQuery.validator.addMethod(
+                        "idnumbercontrol",
+                        function (value, element) {
+                          var the = value;
+                          if (the.length < 10) {
+                            return false;
+                          } else {
+                            if (the.checkIdNumber()) {
+                              return true;
+                            } else {
+                              return false;
+                            }
+                          }
+                        },
+                        "TC Kimlik numaranız hatalı / ID number is incorrect",
+                      );
+
+                      $("form").validate({
+                        rules: {
+                          idnumber: {
+                            idnumbercontrol: true,
+                          },
+                        },
+                        messages: {
+                          agree:
+                            "Lütfen sözleşmemizi okuyup kabul ediniz. / Please read and accept our agreement",
+                        },
+                        errorElement: "em",
+                        errorPlacement: function (error, element) {
+                          // Add the `invalid-feedback` class to the error element
+                          error.addClass("invalid-feedback");
+
+                          if (element.prop("type") === "checkbox") {
+                            error.insertAfter(element.next("label"));
+                          } else {
+                            error.insertAfter(element);
+                          }
+                        },
+                        highlight: function (element, errorClass, validClass) {
+                          $(element)
+                            .addClass("is-invalid")
+                            .removeClass("is-valid");
+                        },
+                        unhighlight: function (
+                          element,
+                          errorClass,
+                          validClass,
+                        ) {
+                          $(element)
+                            .addClass("is-valid")
+                            .removeClass("is-invalid");
+                        },
+                        submitHandler: function () {
+                          sendRequest();
+                        },
+                      });
+                    };
+
+                    var handleAdminApproveRequestComplete = function () {
+                      try {
+                        $("#logo-container").addClass("wifianim");
+
+                        var uname = $.cookie("appru");
+                        var pass = $.cookie("appps");
+
+                        $.cookie("iswaittcadminapprove", "false", {
+                          expires: 1,
+                        });
+                        $.cookie("appru", "", { expires: 1 });
+                        $.cookie("appps", "", { expires: 1 });
+
+                        loginSubmit(uname, pass);
+                      } catch (e) {
+                        $.cookie("iswaittcadminapprove", "false", {
+                          expires: 1,
+                        });
+                        $.cookie("appru", "", { expires: 1 });
+                        $.cookie("appps", "", { expires: 1 });
+                        window.location.href = defaultReferralUrl;
+
+                        "#logo-container".removeClass("wifianim");
+                      }
+                    };
+
+                    var handleApprove = function (uid, data_) {
+                      var data = data_;
+
+                      if (data_ != "" && data_ != null && data_ != undefined) {
+                        $.cookie("authdata", JSON.stringify(data_));
+                      } else {
+                        data = JSON.parse($.cookie("authdata"));
+                      }
+
+                      var approveStatusInterval = setInterval(function () {
+                        var vendor = $("#vendor").val();
+                        getApproveStatus(uid, function (returnData) {
+                          if (returnData.IsSuccessful) {
+                            clearInterval(approveStatusInterval);
+                            //onay gelince yeni url'e yönlendir.
+                            $.cookie("iswaittcadminapprove", "true", {
+                              expires: 1,
+                            });
+
+                            $(".waitingconfirmcontainer").hide();
+
+                            removeCookies();
+
+                            if (iOS()) {
+                              RemoveIOSSession();
+                            }
+                            fortipost(data);
+                          }
+                        });
+                      }, 3800);
+                    };
+
+                    var getApproveStatus = function (uid, callback) {
+                      $.cookie("iswaitprofile", uid);
+
+                      var device = $("#deviceId").val();
+
+                      var params = {
+                        deviceid: device,
+                        uid: uid,
+                      };
+                      //$(".iosguidform").append("<p>GETAPPROVESTATUS " + JSON.stringify(params) + "</p>");
+
+                      $.ajax({
+                        async: true,
+                        type: "POST",
+                        url: "/Hotspot/GetApproveStatus",
+                        data: JSON.stringify(params),
+                        dataType: "json",
+                        contentType: "application/json; charset=utf-8",
+                        success: function (data) {
+                          callback(data);
+                        },
+                        error: function (error) {
+                          callback("");
+                        },
+                      });
+                    };
+
+                    var removeCookies = function () {
+                      $.removeCookie("iswaitprofile");
+                      $.removeCookie("authdata");
+                      $.removeCookie("iswaittcadminapprove");
+                    };
+
+                    function RemoveIOSSession() {
+                      var stateObj = {
+                        guid: getguid(),
+                      };
+                      //$(".iosguidform").append("<p>REMOVEDATA " + JSON.stringify(stateObj) + "</p>");
+
+                      $.ajax({
+                        async: true,
+                        type: "POST",
+                        url: "/Hotspot/RemoveIOSSession",
+                        data: JSON.stringify(stateObj),
+                        dataType: "json",
+                        contentType: "application/json; charset=utf-8",
+                        success: function (data) {
+                          //console.log(data)
+                        },
+                        error: function (error) {
+                          console.log(error);
+                        },
+                      });
+                    }
+                    function SetIOSSession(uid, data_) {
+                      var stateObj = {
+                        guid: getguid(),
+                        authdata: JSON.stringify(data_),
+                        iswaitprofile: uid,
+                        iswaittcadminapprove: false,
+                      };
+                      //$(".iosguidform").append("<p>SETDATA " + JSON.stringify(stateObj) + "</p>");
+
+                      $.ajax({
+                        async: true,
+                        type: "POST",
+                        url: "/Hotspot/SetIOSSessionApprove",
+                        data: JSON.stringify(stateObj),
+                        dataType: "json",
+                        contentType: "application/json; charset=utf-8",
+                        success: function (data) {
+                          //$(".iosguidform").append("<p>SETSUCCESS " + data + "</p>");
+                          //console.log(data)
+                        },
+                        error: function (error) {
+                          //$(".iosguidform").append("<p>SETERROR " + JSON.stringify(error) + "</p>");
+
+                          console.log(error);
+                        },
+                      });
+                    }
+                    function GetIOSSession(callback) {
+                      var stateObj = {
+                        guid: getguid(),
+                      };
+                      $.ajax({
+                        async: true,
+                        type: "POST",
+                        url: "/Hotspot/GetIOSSession",
+                        data: JSON.stringify(stateObj),
+                        dataType: "json",
+                        contentType: "application/json; charset=utf-8",
+                        success: function (data) {
+                          //$(".iosguidform").append("<p>GETIOSSES " + JSON.stringify(data) + "</p>");
+
+                          if (data) {
+                            if (data.iswaitprofile != "") {
+                              $.cookie("iswaitprofile", data.IsWaitProfile);
+                              $.cookie("authdata", data.AuthData);
+                              $.cookie(
+                                "iswaittcadminapprove",
+                                data.IsWaitTcAdminApprove,
+                              );
+
+                              callback(data);
+                            } else {
+                              //parametreler boş bir hata var.
+                              callback(true);
+                            }
+                          } else {
+                            callback(false);
+                          }
+                        },
+                        error: function (error) {
+                          callback(false);
+                        },
+                      });
+                    }
+
+                    return {
+                      // Init demos
+                      init: function () {
+                        if ($.cookie("iswaittcadminapprove") == "true") {
+                          handleAdminApproveRequestComplete();
+                        } else if (
+                          $.cookie("iswaittcadminapprove") == "false"
+                        ) {
+                          $(".waitingconfirmcontainer").show();
+                          $(".connect-btn").ladda("start");
+                          $("form *").prop("readonly", true);
+
+                          var uid = $.cookie("iswaitprofile");
+
+                          handleApprove(uid);
+                        }
+
+                        if (iOS()) {
+                          //if ios ***********************************************************************
+                          GetIOSSession(function (state) {
+                            uid = state.IsWaitProfile;
+                            var data_ = state.AuthData;
+
+                            if (
+                              state.IsWaitTcAdminApprove == false &&
+                              state.AuthData != null
+                            ) {
+                              $(".waitingconfirmcontainer").show();
+                              $(".connect-btn").ladda("start");
+                              $("form *").prop("readonly", true);
+                              handleApprove(uid, data_);
+                            }
+                          });
+                        }
+
+                        handleCore();
+                      },
+                    };
+                  })();
+                  // Class initialization on page load
+                  jQuery(document).ready(function () {
+                    TcknAuth.init();
+                  });
+                </script>
+              </div>
+
+              <div
+                class="waitingconfirmcontainer"
+                style="display: none; margin-bottom: 130px"
+              >
+                <div
+                  class="alert alert-info"
+                  role="alert"
+                  style="margin-top: 30px"
+                >
+                  <p>Onay bekleniyor!</p>
+                  <span>
+                    İnternet hizmeti talebiniz için onay bekleniyor. Lütfen
+                    sayfayı kapatmayınız.
+                  </span>
+                  <div
+                    class="m-loader m-loader--warning"
+                    style="width: 100%; display: inline-block"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var AuthticationPartial = (function () {
+        var handleErrorPage = function () {
+          var errorPage = $("#errorPage").val();
+
+          if (errorPage) {
+            var viewName = "ErrorPartial.cshtml";
+            Auth.getPartialView(viewName, function (data) {
+              $("body").children().hide();
+              $("body").append(data);
+            });
+          }
+        };
+
+        return {
+          // Init demos
+          init: function () {
+            handleErrorPage();
+          },
+        };
+      })();
+
+      // Class initialization on page load
+      jQuery(document).ready(function () {
+        AuthticationPartial.init();
+      });
+    </script>
+  </body>
+</html>

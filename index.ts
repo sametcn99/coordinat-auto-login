@@ -1,11 +1,11 @@
-import wifi from "node-wifi";
-import { execSync } from "child_process";
-import os from "os";
 import axios from "axios";
-import fs from "fs";
-import path from "path";
-
-// ========== ⚙️ SETTINGS ==========
+import * as path from "path";
+import * as os from "os"; // Ensure os is imported at the top
+import wifi from "node-wifi"; // Import node-wifi
+import puppeteer, { Browser } from "puppeteer"; // Add Puppeteer for browser-based authentication
+// import { exec } from 'child_process'; // Keep commented if not used
+// import { promisify } from 'util'; // Keep commented if not used
+// const execAsync = promisify(exec);
 
 // Log levels for more granular logging
 enum LogLevel {
@@ -15,40 +15,55 @@ enum LogLevel {
   ERROR = "ERROR",
 }
 
+// Add a new enum for connectivity status
+enum ConnectivityStatus {
+  ONLINE = "ONLINE",
+  OFFLINE = "OFFLINE",
+  CAPTIVE_PORTAL = "CAPTIVE_PORTAL",
+}
+
 class AutoLogin {
   private WIFI_SSID: string; // Wi-Fi network name
   private WIFI_PASSWORD: string; // Wi-Fi password (if needed)
   private AUTH_URL: string; // Captive portal POST URL
-  private LOGIN_INTERVAL_MS: number; // Check every 10 seconds
+  private LOGIN_INTERVAL_MS: number; // Check every N seconds
   private LOG_FILE: string;
   private FORM_DATA: {
-    TC_NU: string;
-    NAME: string;
-    SURNAME: string;
-    BIRTH_YEAR: string;
+    idnumber: string; // Changed from TC_NU to match Hotspot.html
+    name: string; // Changed from NAME
+    surname: string; // Changed from SURNAME
+    birthyear: string; // Changed from BIRTH_YEAR
   };
   private connectionAttempts: number = 0;
   private successfulConnections: number = 0;
   private lastSuccessTime: number = Date.now();
   private consecutiveActiveConnections: number = 0;
   private silentMode: boolean = false;
+  private browserInstance: Browser | null = null; // Track browser instance for cleanup
 
   constructor() {
     this.WIFI_SSID = process.env.WIFI_SSID || "COORDINAT";
     this.WIFI_PASSWORD = process.env.WIFI_PASSWORD || "";
     this.AUTH_URL =
-      process.env.AUTH_URL || "http://192.168.1.44:5000/Hotspot/Authentication";
+      process.env.AUTH_URL || "http://www.msftconnecttest.com/redirect";
     this.LOGIN_INTERVAL_MS = process.env.LOGIN_INTERVAL_MS
       ? parseInt(process.env.LOGIN_INTERVAL_MS)
       : 5_000; // 5 seconds
     this.LOG_FILE = path.join(__dirname, "connection.log");
     this.FORM_DATA = {
-      TC_NU: process.env.TC_NO || "12345678901", // National ID Number
-      NAME: process.env.NAME || "YourName", // First Name
-      SURNAME: process.env.SURNAME || "YourSurname", // Last Name
-      BIRTH_YEAR: process.env.BIRTH_YEAR || "2000", // Birth Year
+      // Use keys from Hotspot.html
+      idnumber: process.env.TC_NU || "12345678901", // Corrected from TC_NO to TC_NU
+      name: process.env.NAME || "YourName", // First Name
+      surname: process.env.SURNAME || "YourSurname", // Last Name
+      birthyear: process.env.BIRTH_YEAR || "2000", // Birth Year
     };
+
+    // Initialize node-wifi
+    wifi.init({
+      iface: null, // network interface, choose a random wifi interface if set to null
+    });
   }
+
   // Function to log messages both to console and file with enhanced details
   private log(
     message: string,
@@ -82,430 +97,841 @@ class AutoLogin {
           ? `\n    Error: ${error.message}\n    Stack: ${error.stack}`
           : `\n    Details: ${typeof error === "object" ? JSON.stringify(error, null, 2) : error}`;
       logMessage += errorDetails;
-      console.error(logMessage);
-    } else {
-      console.log(logMessage);
     }
 
-    // Ensure log directory exists
-    try {
-      // Add extra newline for better readability between entries if needed
-      fs.appendFileSync(this.LOG_FILE, logMessage + "\n");
-    } catch (err) {
-      console.error(`Failed to write to log file: ${err}`);
+    // Log to console
+    switch (level) {
+      case LogLevel.DEBUG:
+        console.debug(logMessage);
+        break;
+      case LogLevel.INFO:
+        console.info(logMessage);
+        break;
+      case LogLevel.WARN:
+        console.warn(logMessage);
+        break;
+      case LogLevel.ERROR:
+        console.error(logMessage);
+        break;
+      default:
+        console.log(logMessage);
     }
+
+    // Append to log file
+    // fs.appendFile(this.LOG_FILE, logMessage + '\n', (err) => {
+    //   if (err) {
+    //     console.error(`[${new Date().toISOString()}][ERROR] Failed to write to log file: ${err.message}`);
+    //   }
+    // });
   }
 
   // Get device MAC address
   private getMacAddress(): string | null {
-    this.log(`🔍 Getting system MAC address...`, undefined, LogLevel.DEBUG);
-    const ifaces = os.networkInterfaces();
-    this.log(
-      `🖥️ Network interfaces found: ${Object.keys(ifaces).join(", ")}`,
-      undefined,
-      LogLevel.DEBUG,
-    );
-
-    for (const [name, iface] of Object.entries(ifaces)) {
-      if (!iface) {
-        this.log(
-          `⚠️ No interface information for: ${name}`,
-          undefined,
-          LogLevel.DEBUG,
-        );
-        continue;
-      }
-
-      this.log(
-        `📝 Checking interface: ${name} with ${iface.length} address(es)`,
-        undefined,
-        LogLevel.DEBUG,
-      );
-
-      for (const info of iface) {
-        this.log(
-          `  - Address: ${info.address}, Family: ${info.family}, MAC: ${info.mac}, Internal: ${info.internal}`,
-          undefined,
-          LogLevel.DEBUG,
-        );
-        if (
-          info.family === "IPv4" &&
-          !info.internal &&
-          info.mac !== "00:00:00:00:00:00"
-        ) {
-          this.log(
-            `✅ Found valid MAC address: ${info.mac} on interface ${name}`,
-            undefined,
-            LogLevel.DEBUG,
-          );
-          return info.mac;
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]!) {
+        // Skip over internal (i.e. 127.0.0.1) and non-ipv4 addresses
+        if ("IPv4" !== iface.family || iface.internal !== false) {
+          continue;
+        }
+        // Return the first valid MAC address found
+        if (iface.mac && iface.mac !== "00:00:00:00:00:00") {
+          return iface.mac;
         }
       }
     }
-
-    this.log(
-      `❌ Could not find a valid MAC address on any interface`,
-      undefined,
-      LogLevel.WARN,
-    );
     return null;
   }
 
   // Scan for WiFi networks and get the target network's MAC address
+  // Note: This functionality is highly OS-dependent and might require external libraries or commands.
+  // This is a placeholder and likely won't work out-of-the-box on all systems.
   private async getWifiMacAddress(): Promise<string | null> {
     this.log(
-      `🔍 Starting WiFi scan to find network: "${this.WIFI_SSID}"`,
+      "🔍 Scanning for WiFi networks (placeholder)...",
       undefined,
-      LogLevel.INFO,
+      LogLevel.DEBUG,
     );
+    // Example using a hypothetical command-line tool (replace with actual implementation)
     try {
-      const networks = await wifi.scan();
+      // const { stdout } = await execAsync('your-wifi-scan-command');
+      // Parse stdout to find the MAC address for this.WIFI_SSID
+      // return foundMacAddress;
       this.log(
-        `📶 Found ${networks.length} WiFi networks in range`,
+        "⚠️ WiFi scanning not implemented, cannot get AP MAC.",
         undefined,
-        LogLevel.DEBUG,
+        LogLevel.WARN,
       );
-
-      // Log all networks found (for debugging purposes)
-      networks.forEach((network, index) => {
-        this.log(
-          `  [${index + 1}/${networks.length}] SSID: ${network.ssid || "Unknown"}, BSSID: ${
-            network.bssid || "Unknown"
-          }, Channel: ${network.channel || "Unknown"}, Signal: ${network.signal_level || "Unknown"}`,
-          undefined,
-          LogLevel.DEBUG,
-        );
-      });
-
-      const targetNetwork = networks.find(
-        (network) => network.ssid === this.WIFI_SSID,
-      );
-      if (!targetNetwork) {
-        this.log(
-          `❌ Network "${this.WIFI_SSID}" not found in scan results`,
-          undefined,
-          LogLevel.WARN,
-        );
-        return null;
-      }
-
-      this.log(
-        `📡 Found target network: ${this.WIFI_SSID} (BSSID: ${targetNetwork.bssid}, Channel: ${targetNetwork.channel}, Signal: ${targetNetwork.signal_level})`,
-        undefined,
-        LogLevel.INFO,
-      );
-      return targetNetwork?.bssid || null;
-    } catch (err) {
-      this.log(`❌ WiFi scanning error`, err, LogLevel.ERROR);
+      return null; // Placeholder
+    } catch (error) {
+      this.log("❌ Error scanning WiFi networks", error, LogLevel.ERROR);
       return null;
     }
   }
 
-  // Connection check (ping)
-  private isOnline(): boolean {
+  // UPDATED Connection check (detects captive portal and extracts params)
+  private async checkConnectivityStatus(): Promise<ConnectivityStatus> {
+    // Alternative connectivity check URLs
+    const checkUrl = "http://connectivitycheck.gstatic.com/generate_204";
+    const backupCheckUrl = "http://www.msftconnecttest.com/connecttest.txt";
+
     this.log(
-      `🌐 Checking internet connectivity (pinging 8.8.8.8)...`,
+      `🌐 Checking connectivity status via ${checkUrl}...`,
       undefined,
       LogLevel.DEBUG,
     );
+
     try {
-      const startTime = Date.now();
-      execSync("ping -n 1 8.8.8.8", { stdio: "ignore" });
-      const responseTime = Date.now() - startTime;
-      this.log(
-        `✅ Internet connectivity check passed (response time: ${responseTime}ms)`,
-        undefined,
-        LogLevel.DEBUG,
-      );
-      return true;
+      // First try Google's connectivity check - status 204 means we're online
+      const response = await axios.get(checkUrl, {
+        timeout: 5000,
+        maxRedirects: 0, // Don't follow redirects automatically
+        validateStatus: function (status) {
+          return true; // Accept any status code to analyze it
+        },
+      });
+
+      // Status 204 with empty content from Google means we're online
+      if (response.status === 204) {
+        this.log(
+          `✅ Connectivity check passed: Direct internet access confirmed.`,
+          undefined,
+          LogLevel.DEBUG,
+        );
+        return ConnectivityStatus.ONLINE;
+      }
+      // If we get a redirect or a different status, it's likely a captive portal
+      else if (response.status >= 200 && response.status < 400) {
+        this.log(
+          `⚠️ Connectivity check indicates Captive Portal (Unexpected response: Status ${response.status})`,
+          undefined,
+          LogLevel.WARN,
+        );
+        return ConnectivityStatus.CAPTIVE_PORTAL;
+      }
+      // Any error status probably means we're offline
+      else {
+        this.log(
+          `❓ Unexpected status code ${response.status} during connectivity check. Assuming Offline.`,
+          undefined,
+          LogLevel.WARN,
+        );
+        return ConnectivityStatus.OFFLINE;
+      }
     } catch (err) {
-      this.log(
-        `❌ Internet connectivity check failed - no response from 8.8.8.8`,
-        err,
-        LogLevel.WARN,
-      );
-      return false;
+      // Handle specific errors
+      if (axios.isAxiosError(err)) {
+        if (err.code === "ECONNABORTED") {
+          this.log(
+            `❌ Connectivity check failed: Timeout accessing ${checkUrl}`,
+            undefined,
+            LogLevel.WARN,
+          );
+        } else if (err.response) {
+          this.log(
+            `❌ Connectivity check failed: Received status ${err.response.status} from ${checkUrl}`,
+            undefined,
+            LogLevel.WARN,
+          );
+        } else if (err.request) {
+          this.log(
+            `❌ Connectivity check failed: No response received from ${checkUrl}`,
+            err.message,
+            LogLevel.WARN,
+          );
+        } else {
+          this.log(
+            `❌ Connectivity check failed: Error setting up request to ${checkUrl}`,
+            err.message,
+            LogLevel.ERROR,
+          );
+        }
+      } else {
+        this.log(
+          `❌ Connectivity check failed: Unknown error accessing ${checkUrl}`,
+          err,
+          LogLevel.ERROR,
+        );
+      }
+
+      // Try Microsoft's connectivity check URL as a backup
+      try {
+        this.log(
+          `🔄 Trying backup connectivity check via ${backupCheckUrl}...`,
+          undefined,
+          LogLevel.DEBUG,
+        );
+        const backupResponse = await axios.get(backupCheckUrl, {
+          timeout: 5000,
+          validateStatus: () => true,
+        });
+
+        // If we can access Microsoft's URL and get the expected content, we're online
+        if (
+          backupResponse.data &&
+          backupResponse.data.includes("Microsoft Connect Test")
+        ) {
+          this.log(
+            `✅ Backup connectivity check passed: Internet access confirmed.`,
+            undefined,
+            LogLevel.DEBUG,
+          );
+          return ConnectivityStatus.ONLINE;
+        } else {
+          this.log(
+            `⚠️ Backup check indicates Captive Portal.`,
+            undefined,
+            LogLevel.WARN,
+          );
+          return ConnectivityStatus.CAPTIVE_PORTAL;
+        }
+      } catch (backupErr) {
+        this.log(
+          `❌ All connectivity checks failed.`,
+          undefined,
+          LogLevel.WARN,
+        );
+        return ConnectivityStatus.OFFLINE;
+      }
     }
   }
 
-  // Connect to Wi-Fi
+  // Connect to Wi-Fi using node-wifi
   private async connectToWifi() {
     this.log(
-      `📶 Initializing WiFi interface for connection...`,
+      `📶 Attempting to connect to WiFi: ${this.WIFI_SSID} using node-wifi...`,
       undefined,
       LogLevel.INFO,
     );
-    wifi.init({ iface: null }); // iface: null → auto-detect (Windows)
     try {
-      this.log(
-        `🔍 Searching for target WiFi network: "${this.WIFI_SSID}"...`,
-        undefined,
-        LogLevel.INFO,
-      );
-      const bssid = await this.getWifiMacAddress();
-      if (!bssid) {
-        const error = new Error(`WiFi network "${this.WIFI_SSID}" not found`);
-        this.log(
-          `❌ Connection attempt failed: Target network not found`,
-          error,
-          LogLevel.ERROR,
-        );
-        throw error;
-      }
-
-      this.log(
-        `🔌 Attempting connection to "${this.WIFI_SSID}" with${this.WIFI_PASSWORD ? "" : "out"} password...`,
-        undefined,
-        LogLevel.INFO,
-      );
-      const connectionStartTime = Date.now();
       await wifi.connect({
         ssid: this.WIFI_SSID,
         password: this.WIFI_PASSWORD,
       });
-      const connectionTime = Date.now() - connectionStartTime;
-
       this.log(
-        `📶 Successfully connected to Wi-Fi: ${this.WIFI_SSID} (Network MAC: ${bssid}, Connection time: ${connectionTime}ms)`,
+        `✅ WiFi connect command initiated for ${this.WIFI_SSID}. Check status shortly.`,
         undefined,
         LogLevel.INFO,
       );
-    } catch (err) {
-      this.log("❌ Wi-Fi connection error", err, LogLevel.ERROR);
+    } catch (error) {
+      this.log(
+        `❌ Error connecting to WiFi using node-wifi`,
+        error,
+        LogLevel.ERROR,
+      );
     }
   }
 
-  // Disconnect from current WiFi
+  // Disconnect from current WiFi using node-wifi
   private async disconnectFromWifi() {
     this.log(
-      `🔄 Initializing WiFi interface for disconnection...`,
+      "🔌 Attempting to disconnect from WiFi using node-wifi...",
       undefined,
       LogLevel.INFO,
     );
-    wifi.init({ iface: null }); // iface: null → auto-detect (Windows)
     try {
-      // Get current connection status before disconnection
+      await wifi.disconnect();
       this.log(
-        `📊 Checking current connection state before disconnection...`,
+        "✅ WiFi disconnect command executed via node-wifi.",
+        undefined,
+        LogLevel.INFO,
+      );
+    } catch (error) {
+      this.log(
+        "❌ Error disconnecting from WiFi using node-wifi",
+        error,
+        LogLevel.ERROR,
+      );
+    }
+  }
+
+  // UPDATED Captive portal login to accept and use redirect parameters
+  // REWRITTEN Captive portal login using Puppeteer
+  private async authenticateToPortal() {
+    // Check if a browser is already running (e.g., from a previous failed attempt)
+    if (this.browserInstance) {
+      this.log(
+        "⚠️ Browser instance already exists. Attempting to close it before launching a new one.",
+        undefined,
+        LogLevel.WARN,
+      );
+      try {
+        await this.browserInstance.close();
+      } catch (closeError) {
+        this.log(
+          "Error closing existing browser instance",
+          closeError,
+          LogLevel.ERROR,
+        );
+      }
+      this.browserInstance = null;
+    }
+
+    this.log(
+      "🤖 Launching browser for portal authentication...",
+      undefined,
+      LogLevel.INFO,
+    );
+    let browser: Browser | null = null;
+    try {
+      // Launch browser (headless: false shows the browser for debugging)
+      browser = await puppeteer.launch({
+        headless: false, // Keep false for debugging
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-extensions", // Disable extensions
+          "--disable-web-security", // Try disabling web security (use with caution)
+          "--disable-features=IsolateOrigins,site-per-process,BlockInsecurePrivateNetworkRequests", // Try disabling certain security features
+          "--allow-running-insecure-content", // Allow insecure content if needed
+        ],
+      });
+      this.browserInstance = browser; // Store the instance
+
+      const page = await browser.newPage();
+
+      // Set a common user agent
+      await page.setUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+      );
+
+      // Add event listener to capture blocked requests
+      page.on("requestfailed", (request) => {
+        this.log(
+          `❌ Request failed: ${request.url()} - ${request.failure()?.errorText}`,
+          `Method: ${request.method()}, ResourceType: ${request.resourceType()}`,
+          LogLevel.ERROR, // Log as ERROR
+        );
+      });
+
+      // Set a reasonable timeout
+      page.setDefaultNavigationTimeout(30000); // 30 seconds
+
+      this.log(
+        `🌐 Navigating to captive portal test URL...`,
         undefined,
         LogLevel.DEBUG,
       );
-      const currentConnections = await wifi.getCurrentConnections();
-      if (currentConnections.length > 0) {
-        currentConnections.forEach((conn) => {
+
+      // Updated test URLs - Start with the configured AUTH_URL if available
+      const alternativeTestUrls = [
+        this.AUTH_URL, // Try the configured URL first
+        "http://neverssl.com", // A simple HTTP site
+        "http://captive.apple.com",
+        "http://connectivitycheck.gstatic.com/generate_204",
+        "http://www.msftconnecttest.com/connecttest.txt",
+      ];
+
+      let portalUrlFound: string | null = null;
+
+      // Updated navigation logic to cycle through alternative URLs
+      for (const testUrl of alternativeTestUrls) {
+        try {
           this.log(
-            `📡 Currently connected to: SSID: ${conn.ssid || "Unknown"}, MAC: ${conn.mac || "Unknown"}, Channel: ${
-              conn.channel || "Unknown"
-            }`,
+            `🌐 Trying navigation to: ${testUrl}...`, // Log the URL being tried
             undefined,
             LogLevel.DEBUG,
           );
-        });
-      } else {
+          // Use 'domcontentloaded' as sometimes networkidle isn't reached on redirects
+          const response = await page.goto(testUrl, {
+            waitUntil: "domcontentloaded",
+            timeout: 15000, // Shorter timeout per URL
+          });
+
+          const currentUrl = page.url();
+          const status = response?.status();
+          this.log(
+            `➡️ Navigated to ${testUrl}. Current URL: ${currentUrl}, Status: ${status}`,
+            undefined,
+            LogLevel.DEBUG,
+          );
+
+          // Check if we landed on a likely captive portal page
+          // Add more keywords if needed based on the actual portal URL/content
+          if (
+            currentUrl.includes("login") ||
+            currentUrl.includes("auth") ||
+            currentUrl.includes("hotspot") ||
+            currentUrl.includes("redirect") || // Check if it's still the redirect URL
+            status !== 200 // Or if the status isn't a simple OK
+          ) {
+            this.log(
+              `✅ Possible captive portal detected at URL: ${currentUrl}`,
+              undefined,
+              LogLevel.INFO,
+            );
+            portalUrlFound = currentUrl;
+            break; // Exit loop once portal is likely found
+          } else {
+             this.log(
+              `❓ URL ${testUrl} resulted in ${currentUrl} (Status: ${status}). Not identified as portal.`,
+              undefined,
+              LogLevel.DEBUG,
+            );
+          }
+
+        } catch (error: any) {
+           // Log navigation errors more clearly
+           const errorMessage = error.message || "Unknown navigation error";
+           this.log(
+            `❌ Error navigating to ${testUrl}: ${errorMessage}. Trying next URL if available...`,
+            error.stack, // Include stack trace if available
+            LogLevel.WARN,
+          );
+           // If the error is the specific block error, log it prominently
+           if (errorMessage.includes("net::ERR_BLOCKED_BY_CLIENT")) {
+             this.log(
+               `🚫 Navigation to ${testUrl} was blocked by the client (net::ERR_BLOCKED_BY_CLIENT). Check antivirus/firewall.`,
+               undefined,
+               LogLevel.ERROR,
+             );
+           }
+           // Add a small delay before trying the next URL
+           await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+       // If no portal URL was detected after trying all test URLs
+       if (!portalUrlFound) {
         this.log(
-          `📡 No active WiFi connections detected before disconnection`,
+          "⚠️ Could not reliably detect the captive portal page after trying multiple URLs.",
+          undefined,
+          LogLevel.WARN,
+        );
+        // Optionally, attempt to proceed anyway assuming the current page might be it
+        this.log(
+          `🤔 Proceeding with the current page (${page.url()}) for form filling attempt.`,
           undefined,
           LogLevel.DEBUG,
         );
-      }
-
-      this.log(
-        `🔌 Executing disconnection command...`,
-        undefined,
-        LogLevel.INFO,
-      );
-      const disconnectStartTime = Date.now();
-      await wifi.disconnect();
-      const disconnectTime = Date.now() - disconnectStartTime;
-
-      this.log(
-        `📡 Successfully disconnected from WiFi network (Operation took: ${disconnectTime}ms)`,
-        undefined,
-        LogLevel.INFO,
-      );
-    } catch (err) {
-      this.log(`❌ WiFi disconnection error`, err, LogLevel.ERROR);
-    }
-  }
-
-  // Captive portal login
-  private async authenticateToPortal() {
-    const mac = this.getMacAddress();
-    const form = new URLSearchParams();
-
-    for (const [key, value] of Object.entries(this.FORM_DATA)) {
-      form.append(key, value);
-    }
-
-    if (mac) {
-      form.append("mac", mac);
-      this.log(`🔑 Attempting authentication with MAC: ${mac}`);
-    } else {
-      this.log("⚠️ Warning: Could not determine MAC address");
-    }
-    try {
-      this.log(
-        `📡 Sending auth request to ${this.AUTH_URL} with form data: ${JSON.stringify(Object.fromEntries(form))}`,
-        undefined,
-        LogLevel.INFO,
-      );
-      const res = await axios.post(this.AUTH_URL, form, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      });
-
-      this.log(
-        `✅ Portal auth successful (Status: ${res.status}, Data: ${JSON.stringify(res.data)})`,
-        undefined,
-        LogLevel.INFO,
-      );
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        const errorDetails = {
-          status: err.response?.status,
-          statusText: err.response?.statusText,
-          responseData: err.response?.data,
-          message: err.message || "Unknown error",
-          config: {
-            url: err.config ? err.config.url : undefined,
-            method: err.config ? err.config.method : undefined,
-            headers: err.config ? err.config.headers : undefined,
-            data: err.config ? err.config.data : undefined,
-          },
-        };
-        this.log(`❌ Portal auth error`, JSON.stringify(errorDetails, null, 2));
       } else {
-        this.log(
-          `❌ Portal auth error`,
-          err instanceof Error ? err : JSON.stringify(err, null, 2),
+         this.log(
+          `🎯 Proceeding with detected portal URL: ${portalUrlFound}`,
+          undefined,
+          LogLevel.INFO,
         );
       }
+
+
+      // Try to find input fields for the login form
+      this.log(
+        "🔍 Looking for form fields on the page...",
+        undefined,
+        LogLevel.DEBUG,
+      );
+
+      // Get a screenshot for debugging
+      try {
+        await page.screenshot({ path: "captive-portal.png" });
+        this.log(
+          "📸 Saved screenshot to captive-portal.png for debugging",
+          undefined,
+          LogLevel.DEBUG,
+        );
+      } catch (screenshotError) {
+         this.log("⚠️ Failed to save screenshot.", screenshotError, LogLevel.WARN);
+      }
+
+
+      // Try to find and fill the form fields
+      const formFilled = await this.fillCaptivePortalForm(page);
+
+      if (formFilled) {
+        this.log(
+          "✅ Form interaction attempted (check logs for details)", // Changed log message
+          undefined,
+          LogLevel.INFO,
+        );
+      } else {
+        this.log(
+          "⚠️ Could not find/fill form fields or click submit button", // Changed log message
+          undefined,
+          LogLevel.WARN,
+        );
+      }
+
+      // Wait a bit after authentication attempt to let the network stabilize
+      this.log("⏳ Waiting 5s after form submission attempt...", undefined, LogLevel.DEBUG);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    } catch (error) {
+      this.log("❌ Error during browser authentication", error, LogLevel.ERROR);
+    } finally {
+      if (browser) {
+        this.log("🔍 Closing browser.", undefined, LogLevel.DEBUG);
+        try {
+          await browser.close();
+        } catch (closeError) {
+          this.log(
+            "Error closing browser instance in finally block",
+            closeError,
+            LogLevel.ERROR,
+          );
+        }
+        this.browserInstance = null; // Ensure instance is cleared
+      }
     }
   }
 
-  // Main loop
+  // Helper method to find and fill the captive portal form
+  private async fillCaptivePortalForm(page: any): Promise<boolean> {
+    try {
+      // Check for common form fields in captive portals
+      const formFieldsFound = {
+        idnumber: false,
+        name: false,
+        surname: false,
+        birthyear: false,
+      };
+
+      const fieldSelectors = {
+        idnumber: [
+          '#idnumber',
+          'input[name="idnumber"]',
+          'input[placeholder*="TC"]',
+          'input[name*="user"]', // More generic username/id
+        ],
+        name: [
+          '#name',
+          'input[name="name"]',
+          'input[placeholder*="Ad"]',
+          'input[placeholder*="First Name"]',
+        ],
+        surname: [
+          '#surname',
+          'input[name="surname"]',
+          'input[placeholder*="Soyad"]',
+          'input[placeholder*="Last Name"]',
+        ],
+        birthyear: [
+          '#birthyear',
+          'input[name="birthyear"]',
+          'input[placeholder*="Doğum"]',
+          'input[placeholder*="Birth"]',
+        ],
+      };
+
+      const formData = {
+        idnumber: this.FORM_DATA.idnumber,
+        name: this.FORM_DATA.name,
+        surname: this.FORM_DATA.surname,
+        birthyear: this.FORM_DATA.birthyear,
+      };
+
+      // Function to try multiple selectors for a field
+      const fillField = async (fieldName: keyof typeof formFieldsFound, value: string) => {
+        for (const selector of fieldSelectors[fieldName]) {
+          try {
+            // Wait for selector with a shorter timeout
+            await page.waitForSelector(selector, { timeout: 3000, visible: true });
+            await page.type(selector, value, { delay: 50 }); // Add slight delay
+            this.log(
+              `✓ Filled ${fieldName} field (selector: ${selector}) with: ${value}`,
+              undefined,
+              LogLevel.DEBUG,
+            );
+            formFieldsFound[fieldName] = true;
+            return true; // Field filled successfully
+          } catch (e) {
+            this.log(
+              `Selector ${selector} for ${fieldName} not found or interactable.`,
+              undefined, // Don't log the full error unless necessary
+              LogLevel.DEBUG, // Log as debug unless it's the last attempt
+            );
+          }
+        }
+        this.log(`Could not find or fill ${fieldName} field using any selector.`, undefined, LogLevel.WARN);
+        return false; // Field not filled
+      };
+
+      // Fill fields sequentially
+      await fillField('idnumber', formData.idnumber);
+      await fillField('name', formData.name);
+      await fillField('surname', formData.surname);
+      await fillField('birthyear', formData.birthyear);
+
+
+      // Look for and click the submit/connect button
+      const buttonSelectors = [
+        "button.ibtn", // Specific selector from Hotspot.html
+        'button[type="submit"]',
+        'input[type="submit"]',
+        'button[id*="submit"]',
+        'button[id*="connect"]',
+        'button[id*="login"]',
+        'button:contains("Bağlan")', // Text-based selectors (less reliable)
+        'button:contains("Connect")',
+        'button:contains("Login")',
+        'button:contains("Submit")',
+        ".connect-btn", // Original selector
+      ];
+
+      this.log("🔍 Looking for submit button...", undefined, LogLevel.DEBUG);
+
+      // Try each button selector
+      let buttonClicked = false;
+      for (const selector of buttonSelectors) {
+        try {
+           // Wait for button to be visible and enabled
+           await page.waitForSelector(selector, { timeout: 3000, visible: true });
+           const buttonElement = await page.$(selector); // Get element handle
+
+           if (buttonElement) {
+              this.log(
+                `🖱️ Found potential submit button with selector: ${selector}`,
+                undefined,
+                LogLevel.DEBUG,
+              );
+
+             // Check if the button is actually clickable (visible and not disabled)
+             const isVisible = await buttonElement.isIntersectingViewport();
+             // const isDisabled = await page.$eval(selector, (btn) => btn.disabled); // Might fail if btn doesn't have disabled prop
+
+             if (isVisible) { // Simplified check
+                this.log(`Attempting to click button: ${selector}`, undefined, LogLevel.DEBUG);
+                // Use Promise.all to handle navigation that might happen after click
+                await Promise.all([
+                  page.click(selector),
+                  // Wait either for navigation or a timeout
+                  // Use 'load' or 'domcontentloaded' which might be more reliable than networkidle
+                  page.waitForNavigation({ timeout: 15000, waitUntil: 'load' }).catch((navError: any) => {
+                     this.log(`Navigation after click on ${selector} did not complete fully or timed out: ${navError.message}`, undefined, LogLevel.DEBUG);
+                     // Don't treat timeout as critical failure here, portal might just update via JS
+                  }),
+                ]);
+
+                buttonClicked = true;
+                this.log(
+                  `✅ Clicked the submit button with selector: ${selector}`,
+                  undefined,
+                  LogLevel.INFO,
+                );
+                break; // Exit loop after successful click
+             } else {
+                this.log(`Button ${selector} found but not visible/clickable.`, undefined, LogLevel.DEBUG);
+             }
+           }
+        } catch (e: any) {
+          // Log only if the error isn't just a timeout (selector not found)
+          if (!e.message.includes('timeout')) {
+             this.log(
+              `Error interacting with button selector: ${selector}`,
+              e.message,
+              LogLevel.DEBUG,
+            );
+          } else {
+             this.log(`Button selector ${selector} not found within timeout.`, undefined, LogLevel.DEBUG);
+          }
+        }
+      }
+
+      if (!buttonClicked) {
+        this.log(
+          "⚠️ Could not find or click any suitable submit button.",
+          undefined,
+          LogLevel.WARN,
+        );
+        // Try taking another screenshot if button click failed
+        try {
+          await page.screenshot({ path: "captive-portal-no-button.png" });
+          this.log("📸 Saved screenshot to captive-portal-no-button.png", undefined, LogLevel.DEBUG);
+        } catch (screenshotError) {
+           this.log("⚠️ Failed to save no-button screenshot.", screenshotError, LogLevel.WARN);
+        }
+        return false;
+      }
+
+      // Consider the form filled if at least one field was found and the button was clicked
+      const successfulFormFill = Object.values(formFieldsFound).some(
+        (val) => val === true,
+      );
+      if (!successfulFormFill) {
+         this.log("⚠️ No form fields were successfully filled, but button was clicked.", undefined, LogLevel.WARN);
+      }
+
+      return buttonClicked; // Return true if button was clicked, even if fields weren't filled (portal might not need them)
+
+    } catch (error) {
+      this.log("❌ Error filling captive portal form", error, LogLevel.ERROR);
+      return false;
+    }
+  }
+
+  // Updated main loop for puppeteer-based authentication
   public async monitor() {
+    this.log("🚀 AutoLogin script started.", undefined, LogLevel.INFO);
     this.log(
-      `🚀 Starting Coordinat Auto-Login monitoring service`,
+      `🔧 Config: SSID=${this.WIFI_SSID}, AuthURL=${this.AUTH_URL}, Interval=${this.LOGIN_INTERVAL_MS}ms`,
       undefined,
-      LogLevel.INFO,
-    );
-    const cpus = os.cpus();
-    const cpuModel =
-      cpus.length > 0 && cpus[0]?.model ? cpus[0].model : "Unknown CPU";
-    this.log(
-      `📊 System Info: ${os.platform()} ${os.arch()}, ${cpuModel}, RAM: ${Math.round(
-        os.totalmem() / (1024 * 1024 * 1024),
-      )}GB`,
-      undefined,
-      LogLevel.INFO,
+      LogLevel.DEBUG,
     );
     this.log(
-      `⚙️ Settings: WiFi SSID="${this.WIFI_SSID}", Auth URL=${this.AUTH_URL}, Login Interval=${this.LOGIN_INTERVAL_MS}ms`,
+      `📝 UserData: ${JSON.stringify(this.FORM_DATA)}`,
       undefined,
-      LogLevel.INFO,
+      LogLevel.DEBUG,
     );
 
-    // Initial disconnect
+    // Graceful shutdown handling
+    const shutdown = async (signal: string) => {
+      this.log(
+        `${signal} received. Shutting down browser if open...`,
+        undefined,
+        LogLevel.INFO,
+      );
+      if (this.browserInstance) {
+        this.log(
+          "Attempting to close browser instance...",
+          undefined,
+          LogLevel.DEBUG,
+        );
+        try {
+          await this.browserInstance.close();
+          this.log(
+            "Browser instance closed successfully.",
+            undefined,
+            LogLevel.INFO,
+          );
+        } catch (closeError) {
+          this.log(
+            "Error closing browser instance during shutdown",
+            closeError,
+            LogLevel.ERROR,
+          );
+        }
+        this.browserInstance = null;
+      }
+      process.exit(0);
+    };
+
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+
     this.log(
-      `🔄 Performing initial WiFi disconnect for a clean start...`,
+      `🔄 Performing initial WiFi disconnect for a clean state...`,
       undefined,
       LogLevel.INFO,
     );
     await this.disconnectFromWifi();
+    await new Promise((res) => setTimeout(res, 3000)); // Wait a bit after disconnect
+
     while (true) {
       const currentTime = Date.now();
-      const uptime = Math.floor((currentTime - this.lastSuccessTime) / 1000);
+      const uptimeSinceLastSuccess = Math.floor(
+        (currentTime - this.lastSuccessTime) / 1000,
+      );
 
-      if (!this.isOnline()) {
-        this.connectionAttempts++;
-        // Reset consecutive active connections counter when connection is lost
-        this.consecutiveActiveConnections = 0;
-        // Exit silent mode if active
-        if (this.silentMode) {
-          this.silentMode = false;
+      // Get connectivity status
+      const status = await this.checkConnectivityStatus();
+
+      switch (status) {
+        case ConnectivityStatus.OFFLINE:
+          this.connectionAttempts++;
+          this.consecutiveActiveConnections = 0;
+          if (this.silentMode) {
+            this.silentMode = false;
+            this.log(
+              `🔊 Network OFFLINE - Exiting silent mode`,
+              undefined,
+              LogLevel.INFO,
+            );
+          }
           this.log(
-            `🔊 Connection lost - Exiting silent mode`,
-            undefined,
-            LogLevel.INFO,
-          );
-        }
-
-        this.log(
-          `🌐 No connection detected (Attempt #${this.connectionAttempts}, Last success: ${uptime}s ago)`,
-          undefined,
-          LogLevel.INFO,
-        );
-
-        // Try to connect
-        this.log(
-          `🔄 Initiating connection sequence...`,
-          undefined,
-          LogLevel.INFO,
-        );
-        await this.connectToWifi();
-
-        this.log(
-          `⏳ Waiting 5 seconds for connection to stabilize...`,
-          undefined,
-          LogLevel.DEBUG,
-        );
-        await new Promise((res) => setTimeout(res, 5000));
-
-        this.log(
-          `🔑 Starting portal authentication process...`,
-          undefined,
-          LogLevel.INFO,
-        );
-        await this.authenticateToPortal();
-
-        // Check if we're online after authentication
-        if (this.isOnline()) {
-          this.successfulConnections++;
-          this.lastSuccessTime = Date.now();
-          this.log(
-            `✅ Connection successfully established (Total successful connections: ${this.successfulConnections})`,
-            undefined,
-            LogLevel.INFO,
-          );
-        } else {
-          this.log(
-            `⚠️ Connection still not available after authentication attempt`,
+            `🌐 Network OFFLINE (Attempt #${this.connectionAttempts}, Last success: ${uptimeSinceLastSuccess}s ago). Trying to connect WiFi...`,
             undefined,
             LogLevel.WARN,
           );
-        }
-      } else {
-        // Increment consecutive active connections counter
-        this.consecutiveActiveConnections++;
-
-        // Enter silent mode if we reach three consecutive active connections
-        if (this.consecutiveActiveConnections === 3 && !this.silentMode) {
-          this.silentMode = true;
+          await this.connectToWifi();
           this.log(
-            `🔇 Connection stable for 3 consecutive checks - Entering silent mode`,
+            `⏳ Waiting 10s after WiFi connect attempt...`,
+            undefined,
+            LogLevel.DEBUG,
+          );
+          await new Promise((res) => setTimeout(res, 10000)); // Increased wait time to 10 seconds
+          break;
+
+        case ConnectivityStatus.CAPTIVE_PORTAL:
+          this.connectionAttempts++; // Count portal state as needing action
+          this.consecutiveActiveConnections = 0;
+          if (this.silentMode) {
+            this.silentMode = false;
+            this.log(
+              `🔊 Captive Portal detected - Exiting silent mode`,
+              undefined,
+              LogLevel.INFO,
+            );
+          }
+          this.log(
+            `🚪 Captive Portal detected (Attempt #${this.connectionAttempts}, Last success: ${uptimeSinceLastSuccess}s ago). Attempting authentication via browser...`,
             undefined,
             LogLevel.INFO,
           );
-        }
+          // Call the browser-based authentication
+          await this.authenticateToPortal();
+          this.log(
+            `⏳ Waiting 10s after browser auth attempt...`,
+            undefined,
+            LogLevel.DEBUG,
+          );
+          await new Promise((res) => setTimeout(res, 10000)); // Wait longer after browser auth
+          break;
 
-        this.log(
-          `✅ Connection active (Uptime: ${uptime}s, Success rate: ${(
-            (this.successfulConnections /
-              Math.max(1, this.connectionAttempts)) *
-            100
-          ).toFixed(1)}%)`,
-          undefined,
-          LogLevel.INFO,
-        );
+        case ConnectivityStatus.ONLINE:
+          // Only count as successful *connection* if previous state was not ONLINE
+          if (this.consecutiveActiveConnections === 0) {
+            this.successfulConnections++;
+            this.lastSuccessTime = Date.now(); // Reset timer on regaining connection
+            this.log(
+              `✅ Connection successfully established/confirmed (Total successful connections: ${this.successfulConnections})`,
+              undefined,
+              LogLevel.INFO,
+            );
+          }
+
+          this.consecutiveActiveConnections++;
+          // Reset connection attempts counter as we are online
+          if (this.connectionAttempts > 0) {
+            this.log(
+              `🔄 Resetting connection attempts counter as connection is now ONLINE.`,
+              undefined,
+              LogLevel.DEBUG,
+            );
+            this.connectionAttempts = 0;
+          }
+
+          if (this.consecutiveActiveConnections >= 3 && !this.silentMode) {
+            // Enter silent mode after 3 checks
+            this.silentMode = true;
+            this.log(
+              `🔇 Connection stable (${this.consecutiveActiveConnections} checks) - Entering silent mode`,
+              undefined,
+              LogLevel.INFO,
+            );
+          }
+          // Log status only if not in silent mode
+          if (!this.silentMode) {
+            this.log(
+              `✅ Connection active (Stable for ${this.consecutiveActiveConnections} checks, Last success: ${uptimeSinceLastSuccess}s ago)`,
+              undefined,
+              LogLevel.INFO,
+            );
+          }
+          break;
       }
 
-      this.log(
-        `💤 Sleeping for ${this.LOGIN_INTERVAL_MS / 1000}s before next check...`,
-        undefined,
-        LogLevel.DEBUG,
-      );
+      // Log sleep duration only if not in silent mode or if debugging level is active
+      if (
+        !this.silentMode ||
+        LogLevel.DEBUG >=
+          (process.env.LOG_LEVEL
+            ? LogLevel[process.env.LOG_LEVEL as keyof typeof LogLevel]
+            : LogLevel.INFO)
+      ) {
+        this.log(
+          `💤 Sleeping for ${this.LOGIN_INTERVAL_MS / 1000}s before next check...`,
+          undefined,
+          LogLevel.DEBUG,
+        );
+      }
       await new Promise((res) => setTimeout(res, this.LOGIN_INTERVAL_MS));
     }
   }
