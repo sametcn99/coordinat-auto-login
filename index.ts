@@ -3,6 +3,8 @@ import * as path from "path";
 import * as os from "os"; // Ensure os is imported at the top
 import wifi from "node-wifi"; // Import node-wifi
 import puppeteer, { Browser } from "puppeteer"; // Add Puppeteer for browser-based authentication
+import * as fs from "fs/promises"; // Use fs/promises for async file operations
+import inquirer from "inquirer"; // Import inquirer
 // import { exec } from 'child_process'; // Keep commented if not used
 // import { promisify } from 'util'; // Keep commented if not used
 // const execAsync = promisify(exec);
@@ -20,6 +22,18 @@ enum ConnectivityStatus {
   ONLINE = "ONLINE",
   OFFLINE = "OFFLINE",
   CAPTIVE_PORTAL = "CAPTIVE_PORTAL",
+}
+
+// Define an interface for the configuration structure
+interface AppConfig {
+  WIFI_SSID: string;
+  WIFI_PASSWORD?: string; // Optional password
+  AUTH_URL: string;
+  LOGIN_INTERVAL_MS: number;
+  TC_NU: string;
+  NAME: string;
+  SURNAME: string;
+  BIRTH_YEAR: string;
 }
 
 class AutoLogin {
@@ -40,28 +54,171 @@ class AutoLogin {
   private consecutiveActiveConnections: number = 0;
   private silentMode: boolean = false;
   private browserInstance: Browser | null = null; // Track browser instance for cleanup
+  private config!: AppConfig; // Add a property to hold the loaded config
+  private configPath: string; // Path to the config file
 
   constructor() {
-    this.WIFI_SSID = process.env.WIFI_SSID || "COORDINAT";
-    this.WIFI_PASSWORD = process.env.WIFI_PASSWORD || "";
-    this.AUTH_URL =
-      process.env.AUTH_URL || "http://www.msftconnecttest.com/redirect";
-    this.LOGIN_INTERVAL_MS = process.env.LOGIN_INTERVAL_MS
-      ? parseInt(process.env.LOGIN_INTERVAL_MS)
-      : 5_000; // 5 seconds
+    // Initialize properties with placeholder or default values
+    // These will be overwritten by the config loaded in init()
+    this.WIFI_SSID = "";
+    this.WIFI_PASSWORD = "";
+    this.AUTH_URL = "";
+    this.LOGIN_INTERVAL_MS = 5000; // Default interval
     this.LOG_FILE = path.join(__dirname, "connection.log");
     this.FORM_DATA = {
-      // Use keys from Hotspot.html
-      idnumber: process.env.TC_NU || "12345678901", // Corrected from TC_NO to TC_NU
-      name: process.env.NAME || "YourName", // First Name
-      surname: process.env.SURNAME || "YourSurname", // Last Name
-      birthyear: process.env.BIRTH_YEAR || "2000", // Birth Year
+      idnumber: "",
+      name: "",
+      surname: "",
+      birthyear: "",
+    };
+    this.configPath = path.join(__dirname, "auto-login.config.json"); // Define config file path
+  }
+
+  // Async initialization method to load/prompt for config
+  public async init(): Promise<void> {
+    this.log("🔧 Initializing configuration...", undefined, LogLevel.DEBUG);
+    this.config = await this.loadOrPromptConfig();
+
+    // Set class properties from the loaded/prompted config
+    this.WIFI_SSID = this.config.WIFI_SSID;
+    this.WIFI_PASSWORD = this.config.WIFI_PASSWORD || ""; // Use empty string if undefined
+    this.AUTH_URL = this.config.AUTH_URL;
+    this.LOGIN_INTERVAL_MS = this.config.LOGIN_INTERVAL_MS || 5000; // Use default if not in config
+    this.FORM_DATA = {
+      idnumber: this.config.TC_NU,
+      name: this.config.NAME,
+      surname: this.config.SURNAME,
+      birthyear: this.config.BIRTH_YEAR,
     };
 
-    // Initialize node-wifi
+    this.log("🔧 Configuration loaded:", this.config, LogLevel.DEBUG);
+
+    // Initialize node-wifi after config is loaded
     wifi.init({
       iface: null, // network interface, choose a random wifi interface if set to null
     });
+    this.log("📶 node-wifi initialized.", undefined, LogLevel.DEBUG);
+  }
+
+  // Function to load config from file or prompt user
+  private async loadOrPromptConfig(): Promise<AppConfig> {
+    try {
+      this.log(
+        `🔍 Checking for configuration file at: ${this.configPath}`,
+        undefined,
+        LogLevel.DEBUG,
+      );
+      const data = await fs.readFile(this.configPath, "utf-8");
+      this.log(
+        "✅ Configuration file found. Loading settings.",
+        undefined,
+        LogLevel.INFO,
+      );
+      const parsedConfig = JSON.parse(data) as AppConfig;
+      // Basic validation of loaded config (add more checks as needed)
+      if (
+        !parsedConfig.WIFI_SSID ||
+        !parsedConfig.AUTH_URL ||
+        !parsedConfig.TC_NU ||
+        !parsedConfig.NAME ||
+        !parsedConfig.SURNAME ||
+        !parsedConfig.BIRTH_YEAR
+      ) {
+        throw new Error(
+          "Configuration file is missing required fields. Please check auto-login.config.json or delete it to re-configure.",
+        );
+      }
+      return parsedConfig;
+    } catch (error: any) {
+      if (error.code === "ENOENT") {
+        this.log(
+          "⚠️ Configuration file not found. Prompting user for details...",
+          undefined,
+          LogLevel.WARN,
+        );
+        const answers = await inquirer.prompt<AppConfig>([
+          {
+            type: "input",
+            name: "WIFI_SSID",
+            message: "Enter the Wi-Fi network name (SSID):",
+            default: "COORDINAT",
+          },
+          {
+            type: "password", // Use password type for sensitive info
+            name: "WIFI_PASSWORD",
+            message: "Enter the Wi-Fi password (leave blank if none):",
+            mask: "*",
+          },
+          {
+            type: "input",
+            name: "AUTH_URL",
+            message: "Enter the captive portal authentication URL:",
+            default: "http://www.msftconnecttest.com/redirect", // Provide a common default
+          },
+          {
+            type: "input",
+            name: "TC_NU",
+            message: "Enter your ID number (TC Kimlik No):",
+            validate: (input) =>
+              /^\d{11}$/.test(input) ||
+              "Please enter a valid 11-digit ID number.",
+          },
+          {
+            type: "input",
+            name: "NAME",
+            message: "Enter your first name:",
+            validate: (input) => input.length > 0 || "Name cannot be empty.",
+          },
+          {
+            type: "input",
+            name: "SURNAME",
+            message: "Enter your last name:",
+            validate: (input) => input.length > 0 || "Surname cannot be empty.",
+          },
+          {
+            type: "input",
+            name: "BIRTH_YEAR",
+            message: "Enter your birth year (YYYY):",
+            validate: (input) =>
+              /^\d{4}$/.test(input) || "Please enter a valid 4-digit year.",
+          },
+          {
+            type: "number",
+            name: "LOGIN_INTERVAL_MS",
+            message: "Enter the check interval in milliseconds:",
+            default: 5000,
+          },
+        ]);
+
+        try {
+          await fs.writeFile(
+            this.configPath,
+            JSON.stringify(answers, null, 2),
+            "utf-8",
+          );
+          this.log(
+            `💾 Configuration saved to ${this.configPath}`,
+            undefined,
+            LogLevel.INFO,
+          );
+          return answers;
+        } catch (writeError) {
+          this.log(
+            "❌ Error saving configuration file.",
+            writeError,
+            LogLevel.ERROR,
+          );
+          // Proceed with the answers even if saving failed, but log the error
+          return answers;
+        }
+      } else {
+        this.log("❌ Error reading configuration file.", error, LogLevel.ERROR);
+        // Rethrow the error or handle it more gracefully, e.g., exit
+        throw new Error(
+          `Failed to load or create configuration: ${error.message}`,
+        );
+      }
+    }
   }
 
   // Function to log messages both to console and file with enhanced details
@@ -463,36 +620,35 @@ class AutoLogin {
             portalUrlFound = currentUrl;
             break; // Exit loop once portal is likely found
           } else {
-             this.log(
+            this.log(
               `❓ URL ${testUrl} resulted in ${currentUrl} (Status: ${status}). Not identified as portal.`,
               undefined,
               LogLevel.DEBUG,
             );
           }
-
         } catch (error: any) {
-           // Log navigation errors more clearly
-           const errorMessage = error.message || "Unknown navigation error";
-           this.log(
+          // Log navigation errors more clearly
+          const errorMessage = error.message || "Unknown navigation error";
+          this.log(
             `❌ Error navigating to ${testUrl}: ${errorMessage}. Trying next URL if available...`,
             error.stack, // Include stack trace if available
             LogLevel.WARN,
           );
-           // If the error is the specific block error, log it prominently
-           if (errorMessage.includes("net::ERR_BLOCKED_BY_CLIENT")) {
-             this.log(
-               `🚫 Navigation to ${testUrl} was blocked by the client (net::ERR_BLOCKED_BY_CLIENT). Check antivirus/firewall.`,
-               undefined,
-               LogLevel.ERROR,
-             );
-           }
-           // Add a small delay before trying the next URL
-           await new Promise(resolve => setTimeout(resolve, 500));
+          // If the error is the specific block error, log it prominently
+          if (errorMessage.includes("net::ERR_BLOCKED_BY_CLIENT")) {
+            this.log(
+              `🚫 Navigation to ${testUrl} was blocked by the client (net::ERR_BLOCKED_BY_CLIENT). Check antivirus/firewall.`,
+              undefined,
+              LogLevel.ERROR,
+            );
+          }
+          // Add a small delay before trying the next URL
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
 
-       // If no portal URL was detected after trying all test URLs
-       if (!portalUrlFound) {
+      // If no portal URL was detected after trying all test URLs
+      if (!portalUrlFound) {
         this.log(
           "⚠️ Could not reliably detect the captive portal page after trying multiple URLs.",
           undefined,
@@ -505,13 +661,12 @@ class AutoLogin {
           LogLevel.DEBUG,
         );
       } else {
-         this.log(
+        this.log(
           `🎯 Proceeding with detected portal URL: ${portalUrlFound}`,
           undefined,
           LogLevel.INFO,
         );
       }
-
 
       // Try to find input fields for the login form
       this.log(
@@ -529,9 +684,12 @@ class AutoLogin {
           LogLevel.DEBUG,
         );
       } catch (screenshotError) {
-         this.log("⚠️ Failed to save screenshot.", screenshotError, LogLevel.WARN);
+        this.log(
+          "⚠️ Failed to save screenshot.",
+          screenshotError,
+          LogLevel.WARN,
+        );
       }
-
 
       // Try to find and fill the form fields
       const formFilled = await this.fillCaptivePortalForm(page);
@@ -551,9 +709,12 @@ class AutoLogin {
       }
 
       // Wait a bit after authentication attempt to let the network stabilize
-      this.log("⏳ Waiting 5s after form submission attempt...", undefined, LogLevel.DEBUG);
+      this.log(
+        "⏳ Waiting 5s after form submission attempt...",
+        undefined,
+        LogLevel.DEBUG,
+      );
       await new Promise((resolve) => setTimeout(resolve, 5000));
-
     } catch (error) {
       this.log("❌ Error during browser authentication", error, LogLevel.ERROR);
     } finally {
@@ -586,25 +747,25 @@ class AutoLogin {
 
       const fieldSelectors = {
         idnumber: [
-          '#idnumber',
+          "#idnumber",
           'input[name="idnumber"]',
           'input[placeholder*="TC"]',
           'input[name*="user"]', // More generic username/id
         ],
         name: [
-          '#name',
+          "#name",
           'input[name="name"]',
           'input[placeholder*="Ad"]',
           'input[placeholder*="First Name"]',
         ],
         surname: [
-          '#surname',
+          "#surname",
           'input[name="surname"]',
           'input[placeholder*="Soyad"]',
           'input[placeholder*="Last Name"]',
         ],
         birthyear: [
-          '#birthyear',
+          "#birthyear",
           'input[name="birthyear"]',
           'input[placeholder*="Doğum"]',
           'input[placeholder*="Birth"]',
@@ -619,11 +780,17 @@ class AutoLogin {
       };
 
       // Function to try multiple selectors for a field
-      const fillField = async (fieldName: keyof typeof formFieldsFound, value: string) => {
+      const fillField = async (
+        fieldName: keyof typeof formFieldsFound,
+        value: string,
+      ) => {
         for (const selector of fieldSelectors[fieldName]) {
           try {
             // Wait for selector with a shorter timeout
-            await page.waitForSelector(selector, { timeout: 3000, visible: true });
+            await page.waitForSelector(selector, {
+              timeout: 3000,
+              visible: true,
+            });
             await page.type(selector, value, { delay: 50 }); // Add slight delay
             this.log(
               `✓ Filled ${fieldName} field (selector: ${selector}) with: ${value}`,
@@ -640,16 +807,19 @@ class AutoLogin {
             );
           }
         }
-        this.log(`Could not find or fill ${fieldName} field using any selector.`, undefined, LogLevel.WARN);
+        this.log(
+          `Could not find or fill ${fieldName} field using any selector.`,
+          undefined,
+          LogLevel.WARN,
+        );
         return false; // Field not filled
       };
 
       // Fill fields sequentially
-      await fillField('idnumber', formData.idnumber);
-      await fillField('name', formData.name);
-      await fillField('surname', formData.surname);
-      await fillField('birthyear', formData.birthyear);
-
+      await fillField("idnumber", formData.idnumber);
+      await fillField("name", formData.name);
+      await fillField("surname", formData.surname);
+      await fillField("birthyear", formData.birthyear);
 
       // Look for and click the submit/connect button
       const buttonSelectors = [
@@ -672,55 +842,77 @@ class AutoLogin {
       let buttonClicked = false;
       for (const selector of buttonSelectors) {
         try {
-           // Wait for button to be visible and enabled
-           await page.waitForSelector(selector, { timeout: 3000, visible: true });
-           const buttonElement = await page.$(selector); // Get element handle
+          // Wait for button to be visible and enabled
+          await page.waitForSelector(selector, {
+            timeout: 3000,
+            visible: true,
+          });
+          const buttonElement = await page.$(selector); // Get element handle
 
-           if (buttonElement) {
+          if (buttonElement) {
+            this.log(
+              `🖱️ Found potential submit button with selector: ${selector}`,
+              undefined,
+              LogLevel.DEBUG,
+            );
+
+            // Check if the button is actually clickable (visible and not disabled)
+            const isVisible = await buttonElement.isIntersectingViewport();
+            // const isDisabled = await page.$eval(selector, (btn) => btn.disabled); // Might fail if btn doesn't have disabled prop
+
+            if (isVisible) {
+              // Simplified check
               this.log(
-                `🖱️ Found potential submit button with selector: ${selector}`,
+                `Attempting to click button: ${selector}`,
                 undefined,
                 LogLevel.DEBUG,
               );
-
-             // Check if the button is actually clickable (visible and not disabled)
-             const isVisible = await buttonElement.isIntersectingViewport();
-             // const isDisabled = await page.$eval(selector, (btn) => btn.disabled); // Might fail if btn doesn't have disabled prop
-
-             if (isVisible) { // Simplified check
-                this.log(`Attempting to click button: ${selector}`, undefined, LogLevel.DEBUG);
-                // Use Promise.all to handle navigation that might happen after click
-                await Promise.all([
-                  page.click(selector),
-                  // Wait either for navigation or a timeout
-                  // Use 'load' or 'domcontentloaded' which might be more reliable than networkidle
-                  page.waitForNavigation({ timeout: 15000, waitUntil: 'load' }).catch((navError: any) => {
-                     this.log(`Navigation after click on ${selector} did not complete fully or timed out: ${navError.message}`, undefined, LogLevel.DEBUG);
-                     // Don't treat timeout as critical failure here, portal might just update via JS
+              // Use Promise.all to handle navigation that might happen after click
+              await Promise.all([
+                page.click(selector),
+                // Wait either for navigation or a timeout
+                // Use 'load' or 'domcontentloaded' which might be more reliable than networkidle
+                page
+                  .waitForNavigation({ timeout: 15000, waitUntil: "load" })
+                  .catch((navError: any) => {
+                    this.log(
+                      `Navigation after click on ${selector} did not complete fully or timed out: ${navError.message}`,
+                      undefined,
+                      LogLevel.DEBUG,
+                    );
+                    // Don't treat timeout as critical failure here, portal might just update via JS
                   }),
-                ]);
+              ]);
 
-                buttonClicked = true;
-                this.log(
-                  `✅ Clicked the submit button with selector: ${selector}`,
-                  undefined,
-                  LogLevel.INFO,
-                );
-                break; // Exit loop after successful click
-             } else {
-                this.log(`Button ${selector} found but not visible/clickable.`, undefined, LogLevel.DEBUG);
-             }
-           }
+              buttonClicked = true;
+              this.log(
+                `✅ Clicked the submit button with selector: ${selector}`,
+                undefined,
+                LogLevel.INFO,
+              );
+              break; // Exit loop after successful click
+            } else {
+              this.log(
+                `Button ${selector} found but not visible/clickable.`,
+                undefined,
+                LogLevel.DEBUG,
+              );
+            }
+          }
         } catch (e: any) {
           // Log only if the error isn't just a timeout (selector not found)
-          if (!e.message.includes('timeout')) {
-             this.log(
+          if (!e.message.includes("timeout")) {
+            this.log(
               `Error interacting with button selector: ${selector}`,
               e.message,
               LogLevel.DEBUG,
             );
           } else {
-             this.log(`Button selector ${selector} not found within timeout.`, undefined, LogLevel.DEBUG);
+            this.log(
+              `Button selector ${selector} not found within timeout.`,
+              undefined,
+              LogLevel.DEBUG,
+            );
           }
         }
       }
@@ -734,9 +926,17 @@ class AutoLogin {
         // Try taking another screenshot if button click failed
         try {
           await page.screenshot({ path: "captive-portal-no-button.png" });
-          this.log("📸 Saved screenshot to captive-portal-no-button.png", undefined, LogLevel.DEBUG);
+          this.log(
+            "📸 Saved screenshot to captive-portal-no-button.png",
+            undefined,
+            LogLevel.DEBUG,
+          );
         } catch (screenshotError) {
-           this.log("⚠️ Failed to save no-button screenshot.", screenshotError, LogLevel.WARN);
+          this.log(
+            "⚠️ Failed to save no-button screenshot.",
+            screenshotError,
+            LogLevel.WARN,
+          );
         }
         return false;
       }
@@ -746,11 +946,14 @@ class AutoLogin {
         (val) => val === true,
       );
       if (!successfulFormFill) {
-         this.log("⚠️ No form fields were successfully filled, but button was clicked.", undefined, LogLevel.WARN);
+        this.log(
+          "⚠️ No form fields were successfully filled, but button was clicked.",
+          undefined,
+          LogLevel.WARN,
+        );
       }
 
       return buttonClicked; // Return true if button was clicked, even if fields weren't filled (portal might not need them)
-
     } catch (error) {
       this.log("❌ Error filling captive portal form", error, LogLevel.ERROR);
       return false;
@@ -759,6 +962,16 @@ class AutoLogin {
 
   // Updated main loop for puppeteer-based authentication
   public async monitor() {
+    // Ensure config is loaded before starting monitor
+    if (!this.config) {
+      this.log(
+        "❌ Configuration not initialized. Call init() before monitor().",
+        undefined,
+        LogLevel.ERROR,
+      );
+      return; // Or throw an error
+    }
+
     this.log("🚀 AutoLogin script started.", undefined, LogLevel.INFO);
     this.log(
       `🔧 Config: SSID=${this.WIFI_SSID}, AuthURL=${this.AUTH_URL}, Interval=${this.LOGIN_INTERVAL_MS}ms`,
@@ -937,6 +1150,19 @@ class AutoLogin {
   }
 }
 
-// Start
-const autoLogin = new AutoLogin();
-autoLogin.monitor();
+// Start the application
+async function startApp() {
+  const autoLogin = new AutoLogin();
+  try {
+    await autoLogin.init(); // Initialize configuration first
+    await autoLogin.monitor(); // Then start monitoring
+  } catch (error) {
+    console.error(
+      `[${new Date().toISOString()}][FATAL] Application failed to start:`,
+      error,
+    );
+    process.exit(1); // Exit if initialization fails
+  }
+}
+
+startApp(); // Run the async start function
