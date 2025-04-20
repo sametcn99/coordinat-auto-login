@@ -9,6 +9,8 @@ import wifi from "node-wifi"; // Import node-wifi
 import puppeteer, { Browser, Page } from "puppeteer"; // Add Puppeteer for browser-based authentication
 import * as fs from "fs/promises"; // Use fs/promises for async file operations
 import inquirer from "inquirer"; // Import inquirer
+import ora from "ora";
+import type { Ora } from "ora"; // Import ora type separately
 // import { exec } from 'child_process'; // Keep commented if not used
 // import { promisify } from 'util'; // Keep commented if not used
 // const execAsync = promisify(exec);
@@ -90,12 +92,16 @@ class AutoLogin {
   private consecutiveActiveConnections: number = 0;
   /** @private Flag indicating if the script is in silent mode (reduced logging). */
   private silentMode: boolean = false;
+  /** @private Timestamp when silent mode was entered. */
+  private silentModeStartTime: number | null = null; // Added for silent mode duration
   /** @private Holds the Puppeteer browser instance if currently active. */
   private browserInstance: Browser | null = null; // Track browser instance for cleanup
   /** @private Holds the loaded application configuration. */
   private config!: AppConfig; // Add a property to hold the loaded config
   /** @private The absolute path to the configuration file. */
   private configPath: string; // Path to the config file
+  /** @private Holds the ora spinner instance for silent mode. */
+  private silentModeSpinner: Ora | null = null;
 
   /**
    * Creates an instance of AutoLogin.
@@ -283,37 +289,84 @@ class AutoLogin {
   }
 
   /**
-   * Logs a message to both the console and the log file.
-   * Includes timestamp, log level, and memory usage.
-   * Handles optional error details.
-   * Manages silent mode (suppresses INFO logs when stable, exits silent mode on error).
-   * Truncates the log file if it exceeds 5MB.
+   * Formats a duration in milliseconds into a human-readable string.
    * @private
-   * @param {string} message - The main message to log.
-   * @param {Error | string | unknown} [error] - Optional error object or details.
-   * @param {LogLevel} [level=LogLevel.INFO] - The severity level of the log message.
+   * @param {number} ms - The duration in milliseconds.
+   * @returns {string} A formatted string (e.g., "5 seconds", "2 minutes", "1 hour 15 minutes").
    */
+  private formatDuration(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      const remainingMinutes = minutes % 60;
+      return `${hours} hour${hours > 1 ? "s" : ""}${remainingMinutes > 0 ? ` ${remainingMinutes} minute${remainingMinutes > 1 ? "s" : ""}` : ""}`;
+    } else if (minutes > 0) {
+      const remainingSeconds = seconds % 60;
+      return `${minutes} minute${minutes > 1 ? "s" : ""}${remainingSeconds > 0 ? ` ${remainingSeconds} second${remainingSeconds > 1 ? "s" : ""}` : ""}`;
+    } else {
+      return `${seconds} second${seconds !== 1 ? "s" : ""}`;
+    }
+  }
+
+  /**
+   * Updates the text of the silent mode spinner with the current duration.
+   * @private
+   */
+  private updateSilentModeSpinner(): void {
+    if (this.silentModeSpinner && this.silentModeStartTime) {
+      const silentDurationMs = Date.now() - this.silentModeStartTime;
+      const formattedDuration = this.formatDuration(silentDurationMs);
+      this.silentModeSpinner.text = `Connection active. Silent for: ${formattedDuration}`;
+    }
+  }
+
   private async log(
     message: string,
     error?: Error | string | unknown,
     level: LogLevel = LogLevel.INFO,
   ): Promise<void> {
-    // Skip logging if in silent mode and there's no error
-    if (this.silentMode && !error && level === LogLevel.INFO) {
-      return;
-    }
-
-    // If there's an error, exit silent mode
+    // If there's an error, handle potential silent mode exit FIRST
     if (error) {
       if (this.silentMode) {
+        this.silentModeSpinner?.stop(); // Stop spinner first
+        this.silentModeSpinner = null;
         this.silentMode = false;
+        this.silentModeStartTime = null; // Reset timer on error exit
         this.consecutiveActiveConnections = 0;
-        console.log(
-          `[${new Date().toISOString()}] ⚠️ Error detected - Exiting silent mode`,
-        );
+
+        // No need for process.stdout.write('\n'); ora handles cleanup
+
+        // Log the exit message normally (console and file) now that silentMode is false
+        const exitTimestamp = new Date().toISOString();
+        const exitMemoryUsage = process.memoryUsage();
+        const exitMemoryInfo = `mem:${Math.round(exitMemoryUsage.heapUsed / 1024 / 1024)}MB`;
+        const exitLogMessage = `[${exitTimestamp}][WARN][${exitMemoryInfo}] ⚠️ Error detected - Exiting silent mode`;
+        console.warn(exitLogMessage); // Log to console
+        try {
+          await fs.appendFile(this.LOG_FILE, exitLogMessage + "\\n"); // Log to file
+        } catch (appendErr: any) {
+          console.error(
+            `[${exitTimestamp}][ERROR] Failed to write silent mode exit log: ${appendErr.message}`,
+          );
+        }
       }
     }
+    // If in silent mode (and no error caused an exit above), suppress all logging.
+    else if (this.silentMode) {
+      // Check if the message is the sleep message, if so, update spinner briefly
+      if (message.startsWith("💤 Sleeping for")) {
+        if (this.silentModeSpinner) {
+          const originalText = this.silentModeSpinner.text;
+          this.silentModeSpinner.text = message; // Show sleep message
+          // No need to explicitly revert, next updateSilentModeSpinner call will fix it
+        }
+      }
+      return; // Skip normal logging
+    }
 
+    // --- Normal logging logic ---
     const timestamp = new Date().toISOString();
     const memoryUsage = process.memoryUsage();
     const memoryInfo = `mem:${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`;
@@ -322,8 +375,8 @@ class AutoLogin {
     if (error) {
       const errorDetails =
         error instanceof Error
-          ? `\n    Error: ${error.message}\n    Stack: ${error.stack}`
-          : `\n    Details: ${typeof error === "object" ? JSON.stringify(error, null, 2) : error}`;
+          ? `\\n    Error: ${error.message}\\n    Stack: ${error.stack}`
+          : `\\n    Details: ${typeof error === "object" ? JSON.stringify(error, null, 2) : error}`;
       logMessage += errorDetails;
     }
 
@@ -343,7 +396,9 @@ class AutoLogin {
         break;
       default:
         console.log(logMessage);
-    } // Append to log file with size check and truncation
+    }
+
+    // Append to log file
     try {
       // Check file size
       try {
@@ -676,6 +731,7 @@ class AutoLogin {
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
+          "--ignore-certificate-errors", // ADD this flag to ignore HTTPS errors
           "--disable-extensions", // Disable extensions
           "--disable-web-security", // Try disabling web security (use with caution)
           "--disable-features=IsolateOrigins,site-per-process,BlockInsecurePrivateNetworkRequests", // Try disabling certain security features
@@ -1153,10 +1209,12 @@ class AutoLogin {
      */
     const shutdown = async (signal: string) => {
       this.log(
-        `${signal} received. Shutting down browser if open...`,
+        `${signal} received. Shutting down...`, // Simplified message
         undefined,
         LogLevel.INFO,
       );
+      this.silentModeSpinner?.stop(); // Stop spinner on shutdown
+      this.silentModeSpinner = null;
       if (this.browserInstance) {
         this.log(
           "Attempting to close browser instance...",
@@ -1204,54 +1262,56 @@ class AutoLogin {
 
       switch (status) {
         case ConnectivityStatus.OFFLINE:
+        case ConnectivityStatus.CAPTIVE_PORTAL: // Combine handling for exiting silent mode
           this.connectionAttempts++;
           this.consecutiveActiveConnections = 0;
           if (this.silentMode) {
+            this.silentModeSpinner?.stop(); // Stop spinner
+            this.silentModeSpinner = null;
             this.silentMode = false;
-            await this.log(
-              `🔊 Network OFFLINE - Exiting silent mode`,
-              undefined,
-              LogLevel.INFO,
-            );
-          }
-          await this.log(
-            `🌐 Network OFFLINE (Attempt #${this.connectionAttempts}, Last success: ${uptimeSinceLastSuccess}s ago). Trying to connect WiFi...`,
-            undefined,
-            LogLevel.WARN,
-          );
-          await this.connectToWifi();
-          await this.log(
-            `⏳ Waiting 10s after WiFi connect attempt...`,
-            undefined,
-            LogLevel.DEBUG,
-          );
-          await new Promise((res) => setTimeout(res, 10000)); // Increased wait time to 10 seconds
-          break;
+            this.silentModeStartTime = null; // Reset timer
 
-        case ConnectivityStatus.CAPTIVE_PORTAL:
-          this.connectionAttempts++; // Count portal state as needing action
-          this.consecutiveActiveConnections = 0;
-          if (this.silentMode) {
-            this.silentMode = false;
+            // Log the exit message normally
+            const exitReason =
+              status === ConnectivityStatus.OFFLINE
+                ? "Network OFFLINE"
+                : "Captive Portal detected";
             await this.log(
-              `🔊 Captive Portal detected - Exiting silent mode`,
+              `🔊 ${exitReason} - Exiting silent mode`,
+              undefined,
+              LogLevel.WARN,
+            );
+          }
+
+          // Log the specific status and action
+          if (status === ConnectivityStatus.OFFLINE) {
+            await this.log(
+              `🌐 Network OFFLINE (Attempt #${this.connectionAttempts}, Last success: ${uptimeSinceLastSuccess}s ago). Trying to connect WiFi...`,
+              undefined,
+              LogLevel.WARN,
+            );
+            await this.connectToWifi();
+            await this.log(
+              `⏳ Waiting 10s after WiFi connect attempt...`,
+              undefined,
+              LogLevel.DEBUG,
+            );
+            await new Promise((res) => setTimeout(res, 10000));
+          } else {
+            // CAPTIVE_PORTAL
+            await this.log(
+              `🚪 Captive Portal detected (Attempt #${this.connectionAttempts}, Last success: ${uptimeSinceLastSuccess}s ago). Attempting authentication via browser...`,
               undefined,
               LogLevel.INFO,
             );
+            await this.authenticateToPortal();
+            await this.log(
+              `⏳ Waiting 10s after browser auth attempt...`,
+              undefined,
+              LogLevel.DEBUG,
+            );
+            await new Promise((res) => setTimeout(res, 10000));
           }
-          await this.log(
-            `🚪 Captive Portal detected (Attempt #${this.connectionAttempts}, Last success: ${uptimeSinceLastSuccess}s ago). Attempting authentication via browser...`,
-            undefined,
-            LogLevel.INFO,
-          );
-          // Call the browser-based authentication
-          await this.authenticateToPortal();
-          await this.log(
-            `⏳ Waiting 10s after browser auth attempt...`,
-            undefined,
-            LogLevel.DEBUG,
-          );
-          await new Promise((res) => setTimeout(res, 10000)); // Wait longer after browser auth
           break;
 
         case ConnectivityStatus.ONLINE:
@@ -1265,7 +1325,6 @@ class AutoLogin {
               LogLevel.INFO,
             );
           }
-
           this.consecutiveActiveConnections++;
           // Reset connection attempts counter as we are online
           if (this.connectionAttempts > 0) {
@@ -1277,17 +1336,30 @@ class AutoLogin {
             this.connectionAttempts = 0;
           }
 
+          // Check if entering silent mode
           if (this.consecutiveActiveConnections >= 3 && !this.silentMode) {
-            // Enter silent mode after 3 checks
-            this.silentMode = true;
+            console.clear(); // Clear the terminal before entering silent mode
             await this.log(
+              // Log entry message *before* starting spinner
               `🔇 Connection stable (${this.consecutiveActiveConnections} checks) - Entering silent mode`,
               undefined,
               LogLevel.INFO,
             );
+            this.silentMode = true;
+            this.silentModeStartTime = Date.now(); // Start timer
+            this.silentModeSpinner = ora({
+              text: "Initializing silent mode...",
+              spinner: "dots",
+            }).start();
+            this.updateSilentModeSpinner(); // Set initial duration text
           }
-          // Log status only if not in silent mode
-          if (!this.silentMode) {
+
+          // Handle logging based on silent mode status
+          if (this.silentMode) {
+            // In silent mode: Update ora spinner text
+            this.updateSilentModeSpinner();
+          } else {
+            // Not in silent mode: Log normally
             await this.log(
               `✅ Connection active (Stable for ${this.consecutiveActiveConnections} checks, Last success: ${uptimeSinceLastSuccess}s ago)`,
               undefined,
@@ -1297,20 +1369,13 @@ class AutoLogin {
           break;
       }
 
-      // Log sleep duration only if not in silent mode or if debugging level is active
-      if (
-        !this.silentMode ||
-        LogLevel.DEBUG >=
-          (process.env.LOG_LEVEL
-            ? LogLevel[process.env.LOG_LEVEL as keyof typeof LogLevel]
-            : LogLevel.INFO)
-      ) {
-        await this.log(
-          `💤 Sleeping for ${this.LOGIN_INTERVAL_MS / 1000}s before next check...`,
-          undefined,
-          LogLevel.DEBUG,
-        );
-      }
+      // Sleep
+      await this.log(
+        // Log function handles silent mode suppression/spinner update
+        `💤 Sleeping for ${this.LOGIN_INTERVAL_MS / 1000}s before next check...`,
+        undefined,
+        LogLevel.DEBUG,
+      );
       await new Promise((res) => setTimeout(res, this.LOGIN_INTERVAL_MS));
     }
   }

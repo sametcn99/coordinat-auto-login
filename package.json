@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "start": "bun run index.ts",
-    "build": "bun build ./index.ts --compile --outfile coordinat-auto-login",
+    "build": "bun build ./index.ts --compile --outfile coordinat-auto-login --windows-icon ./logo.ico",
     "format": "prettier --write ."
   },
   "devDependencies": {
@@ -18,9 +18,11 @@
   },
   "dependencies": {
     "@types/inquirer": "^9.0.7",
+    "@types/ora": "^3.2.0",
     "axios": "^1.8.4",
     "inquirer": "^12.5.2",
     "node-wifi": "^2.0.16",
+    "ora": "^8.2.0",
     "puppeteer": "^24.6.1"
   }
 }
