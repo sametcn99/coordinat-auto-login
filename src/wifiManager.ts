@@ -2,10 +2,10 @@ import wifi from "node-wifi";
 import { Logger } from "./logger";
 import { LogLevel } from "./types";
 import * as os from "os";
-import { WifiInitializer } from "./WifiInitializer.service";
-import { NetworkInterfaceManager } from "./NetworkInterfaceManager.service";
-import { AccessPointScanner } from "./AccessPointScanner.service";
-import { WifiConnector } from "./WifiConnector.service";
+import { WifiInitializer } from "./WifiInitializer";
+import { NetworkInterfaceManager } from "./NetworkInterfaceManager";
+import { AccessPointScanner } from "./AccessPointScanner";
+import { WifiConnector } from "./WifiConnector";
 // import { exec } from 'child_process'; // Keep commented if not used
 // import { promisify } from 'util'; // Keep commented if not used
 // const execAsync = promisify(exec);

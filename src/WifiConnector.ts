@@ -1,7 +1,7 @@
 import wifi from "node-wifi";
 import { Logger } from "./logger";
 import { LogLevel } from "./types";
-import type { WifiInitializer } from "./WifiInitializer.service";
+import type { WifiInitializer } from "./WifiInitializer";
 
 export class WifiConnector {
   private logger: Logger;
